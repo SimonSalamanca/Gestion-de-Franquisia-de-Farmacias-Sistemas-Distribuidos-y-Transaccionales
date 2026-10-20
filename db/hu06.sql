@@ -1,0 +1,1 @@
+-- Extensiones aditivas de HU-06. Idempotente.

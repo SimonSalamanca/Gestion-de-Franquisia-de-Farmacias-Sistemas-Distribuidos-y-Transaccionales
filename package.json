@@ -1,0 +1,17 @@
+{
+  "name": "farmahub",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"node apps/api/server.mjs\" \"npm run dev --prefix apps/web\"",
+    "api": "node apps/api/server.mjs",
+    "test:hu06": "node scripts/probar-hu06.mjs",
+    "web": "npm run dev --prefix apps/web"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

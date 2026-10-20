@@ -1,0 +1,30 @@
+# Dependencias y builds
+node_modules/
+dist/
+build/
+
+# Secretos y entornos (credenciales de Neon nunca suben a GitHub)
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Respaldos del editor y logs locales
+*.bak
+*.log
+
+# Sistema operativo
+Thumbs.db
+.DS_Store
+
+# Configuracion de agentes IA (opencode): agentes, skills y contexto
+opencode.json
+opencode.jsonc
+.opencode/
+.agents/
+skills-lock.json
+AGENTS.md
+FARMAHUB_CONTEXT.md
+
+# Configuracion del editor (no esencial para la aplicacion)
+.vscode/
