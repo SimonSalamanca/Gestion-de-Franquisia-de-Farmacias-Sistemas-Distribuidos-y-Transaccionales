@@ -1,10 +1,20 @@
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 import { central, local, runtime } from "./db.mjs";
+import { config, ROOT } from "./config.mjs";
 import { hashPassword } from "./crypto.mjs";
 
-const dbDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../db");
+const dbDir = path.join(ROOT, "db");
+
+// Scripts por nodo en db/<nodo>/NN_nombre.sql, aplicados en orden alfabético.
+// 00_base.sql crea el esquema y solo corre si la base está vacía (no es idempotente).
+// Todos los demás deben ser idempotentes: se ejecutan en cada arranque.
+const NODOS = {
+  central: { pool: central, carpeta: "central", tablaBase: "empleado" },
+  local: { pool: local, carpeta: "local", tablaBase: "empleado_ref" },
+};
+
+const LOCK_MIGRACION = 814207;
 
 const DEMO_PASSWORD = "Farma123";
 
@@ -29,9 +39,33 @@ const DEMO_USERS = [
   },
 ];
 
-async function runFile(pool, file) {
-  const sql = fs.readFileSync(path.join(dbDir, file), "utf8");
-  await pool.query(sql);
+export function scriptsDe(nodo) {
+  const carpeta = path.join(dbDir, NODOS[nodo].carpeta);
+  return fs
+    .readdirSync(carpeta)
+    .filter((file) => /^\d{2,}_[\w-]+\.sql$/.test(file))
+    .sort()
+    .map((file) => ({ file, base: file.startsWith("00_"), ruta: path.join(carpeta, file) }));
+}
+
+async function aplicarScripts(nodo) {
+  const { pool, tablaBase } = NODOS[nodo];
+  const client = await pool.connect();
+  try {
+    // Evita que dos procesos apliquen scripts a la vez sobre la misma base.
+    await client.query("select pg_advisory_lock($1)", [LOCK_MIGRACION]);
+    const existe = await client.query("select to_regclass($1) is not null as ok", [`public.${tablaBase}`]);
+    const aplicados = [];
+    for (const script of scriptsDe(nodo)) {
+      if (script.base && existe.rows[0].ok) continue;
+      await client.query(fs.readFileSync(script.ruta, "utf8"));
+      aplicados.push(script.file);
+    }
+    return aplicados;
+  } finally {
+    await client.query("select pg_advisory_unlock($1)", [LOCK_MIGRACION]).catch(() => {});
+    client.release();
+  }
 }
 
 async function seedCentral() {
@@ -63,75 +97,93 @@ async function seedCentral() {
   return idTienda;
 }
 
-async function emitCatalog(idTienda) {
-  const already = await central.query("select count(*)::int as n from replica_evento");
+// Catálogo global (tienda, roles, permisos): una sola vez, cuando el log está vacío.
+// Una tienda que se une después lo recibe igual, porque lee el log desde el evento 1.
+async function emitirCatalogoGlobal(client, idTienda) {
+  const already = await client.query("select count(*)::int as n from replica_evento");
   if (already.rows[0].n > 0) return;
+  const tienda = await client.query(
+    "select id_tienda, nombre, activa from tienda where id_tienda = $1",
+    [idTienda],
+  );
+  await client.query("select append_replica_evento($1, $2, $3, $4::jsonb)", [
+    null,
+    "TIENDA_UPSERT",
+    1,
+    JSON.stringify({ ...tienda.rows[0], es_tienda_local: true }),
+  ]);
 
-  const client = await central.connect();
-  try {
-    await client.query("begin");
-    const tienda = await client.query(
-      "select id_tienda, nombre, activa from tienda where id_tienda = $1",
-      [idTienda],
+  const roles = await client.query("select id_rol, nombre from rol order by id_rol");
+  for (const rol of roles.rows) {
+    await client.query("select append_replica_evento($1, $2, $3, $4::jsonb)", [
+      null,
+      "ROL_UPSERT",
+      1,
+      JSON.stringify(rol),
+    ]);
+  }
+
+  const permisos = await client.query("select id_permiso, codigo, descripcion from permiso order by id_permiso");
+  for (const permiso of permisos.rows) {
+    await client.query("select append_replica_evento($1, $2, $3, $4::jsonb)", [
+      null,
+      "PERMISO_UPSERT",
+      1,
+      JSON.stringify(permiso),
+    ]);
+  }
+
+  for (const rol of roles.rows) {
+    const codes = await client.query(
+      `select p.id_permiso, p.codigo
+       from rol_permiso rp
+       join permiso p on p.id_permiso = rp.id_permiso
+       where rp.id_rol = $1
+       order by p.codigo`,
+      [rol.id_rol],
     );
     await client.query("select append_replica_evento($1, $2, $3, $4::jsonb)", [
       null,
-      "TIENDA_UPSERT",
+      "ROL_PERMISO_SET",
       1,
-      JSON.stringify({ ...tienda.rows[0], es_tienda_local: true }),
+      JSON.stringify({ id_rol: rol.id_rol, permisos: codes.rows }),
     ]);
+  }
+}
 
-    const roles = await client.query("select id_rol, nombre from rol order by id_rol");
-    for (const rol of roles.rows) {
-      await client.query("select append_replica_evento($1, $2, $3, $4::jsonb)", [
-        null,
-        "ROL_UPSERT",
-        1,
-        JSON.stringify(rol),
-      ]);
-    }
+// Empleados de la tienda que todavía no tienen ningún EMPLEADO_UPSERT en el log.
+// Antes solo se emitían junto con el catálogo inicial, así que una tienda nueva nunca recibía los suyos.
+async function emitirEmpleadosPendientes(client, idTienda) {
+  const empleados = await client.query(
+    `select e.id_empleado, e.id_tienda, e.id_rol, e.nombre_completo, e.usuario, e.activo, e.contrasena_hash,
+            e.fecha_baja, e.version_credencial
+     from empleado e
+     where e.id_tienda = $1
+       and not exists (
+         select 1 from replica_evento r
+         where r.tipo_evento = 'EMPLEADO_UPSERT'
+           and (r.payload ->> 'id_empleado')::integer = e.id_empleado
+       )
+     order by e.id_empleado`,
+    [idTienda],
+  );
+  for (const empleado of empleados.rows) {
+    await client.query("select append_replica_evento($1, $2, $3, $4::jsonb)", [
+      empleado.id_tienda,
+      "EMPLEADO_UPSERT",
+      empleado.version_credencial,
+      JSON.stringify(empleado),
+    ]);
+  }
+  return empleados.rowCount;
+}
 
-    const permisos = await client.query("select id_permiso, codigo, descripcion from permiso order by id_permiso");
-    for (const permiso of permisos.rows) {
-      await client.query("select append_replica_evento($1, $2, $3, $4::jsonb)", [
-        null,
-        "PERMISO_UPSERT",
-        1,
-        JSON.stringify(permiso),
-      ]);
-    }
-
-    for (const rol of roles.rows) {
-      const codes = await client.query(
-        `select p.id_permiso, p.codigo
-         from rol_permiso rp
-         join permiso p on p.id_permiso = rp.id_permiso
-         where rp.id_rol = $1
-         order by p.codigo`,
-        [rol.id_rol],
-      );
-      await client.query("select append_replica_evento($1, $2, $3, $4::jsonb)", [
-        null,
-        "ROL_PERMISO_SET",
-        1,
-        JSON.stringify({ id_rol: rol.id_rol, permisos: codes.rows }),
-      ]);
-    }
-
-    const empleados = await client.query(
-      `select id_empleado, id_tienda, id_rol, nombre_completo, usuario, activo, contrasena_hash, fecha_baja, version_credencial
-       from empleado
-       where id_tienda = $1`,
-      [idTienda],
-    );
-    for (const empleado of empleados.rows) {
-      await client.query("select append_replica_evento($1, $2, $3, $4::jsonb)", [
-        empleado.id_tienda,
-        "EMPLEADO_UPSERT",
-        empleado.version_credencial,
-        JSON.stringify(empleado),
-      ]);
-    }
+async function emitCatalog(idTienda) {
+  const client = await central.connect();
+  try {
+    await client.query("begin");
+    await emitirCatalogoGlobal(client, idTienda);
+    await emitirEmpleadosPendientes(client, idTienda);
     await client.query("commit");
   } catch (error) {
     await client.query("rollback");
@@ -220,19 +272,38 @@ async function backfillTienda() {
   }
 }
 
-export async function migrate() {
-  await runFile(central, "hu06_central.sql");
-  await runFile(local, "hu06_local.sql");
+export async function migrate({ log = () => {} } = {}) {
+  const enCentral = await aplicarScripts("central");
+  const enLocal = await aplicarScripts("local");
+  log(`scripts central: ${enCentral.join(", ") || "-"} | local: ${enLocal.join(", ") || "-"}`);
   await asegurarUsuarioUnico();
   await backfillTienda();
-  const idTienda = await seedCentral();
+  if (config.seedDemo) {
+    const idDemo = await seedCentral();
+    if (idDemo !== config.tiendaId) {
+      console.warn(`SEED_DEMO: los usuarios demo están en la tienda ${idDemo}, pero LOCAL_TIENDA_ID=${config.tiendaId}.`);
+    }
+  }
+  // La identidad del nodo viene de LOCAL_TIENDA_ID, no de la semilla.
+  const idTienda = config.tiendaId;
+  const existe = await centralTienda(idTienda);
+  if (!existe) console.warn(`LOCAL_TIENDA_ID=${idTienda} no existe en el nodo central.`);
   runtime.tiendaId = idTienda;
-  await local.query(
+  await localCursor(idTienda);
+  if (existe) await emitCatalog(idTienda);
+  return idTienda;
+}
+
+async function centralTienda(idTienda) {
+  const result = await NODOS.central.pool.query("select 1 from tienda where id_tienda = $1", [idTienda]);
+  return result.rowCount === 1;
+}
+
+async function localCursor(idTienda) {
+  await NODOS.local.pool.query(
     "insert into replica_cursor (id_tienda) values ($1) on conflict (id_tienda) do nothing",
     [idTienda],
   );
-  await emitCatalog(idTienda);
-  return idTienda;
 }
 
 export { DEMO_PASSWORD, DEMO_USERS };
