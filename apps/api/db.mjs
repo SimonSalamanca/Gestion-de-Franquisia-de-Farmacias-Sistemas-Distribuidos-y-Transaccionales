@@ -1,33 +1,32 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import pg from "pg";
+import { config, loadEnv } from "./config.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+export { loadEnv };
 
-export function loadEnv() {
-  const file = path.join(root, ".env");
-  const env = {};
-  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
-    if (!line || line.startsWith("#") || !line.includes("=")) continue;
-    const index = line.indexOf("=");
-    env[line.slice(0, index)] = line.slice(index + 1).replace(/^"|"$/g, "");
-  }
-  return env;
-}
+// Las columnas "timestamp without time zone" guardan hora UTC (Neon corre en GMT).
+// Sin esto, node-pg las interpreta como hora local de la máquina y las desplaza.
+pg.types.setTypeParser(pg.types.builtins.TIMESTAMP, (value) =>
+  value === "infinity" || value === "-infinity" ? value : new Date(`${value.replace(" ", "T")}Z`),
+);
+pg.defaults.parseInputDatesAsUTC = true;
 
-const env = loadEnv();
-
-export const LOCAL_TIENDA_ID = Number(process.env.LOCAL_TIENDA_ID || 1);
+export const LOCAL_TIENDA_ID = config.tiendaId;
 export const runtime = { tiendaId: LOCAL_TIENDA_ID };
-export const PEPPER = process.env.AUTH_PEPPER || "farmahub-dev-pepper";
+export const PEPPER = config.pepper;
 
-function config(url) {
+function poolConfig(url) {
   return { connectionString: url, ssl: { rejectUnauthorized: false }, max: 4 };
 }
 
-export const central = new pg.Pool(config(env.CENTRAL_DATABASE_URL_UNPOOLED || env.CENTRAL_DATABASE_URL));
-export const local = new pg.Pool(config(env.LOCAL_DATABASE_URL_UNPOOLED || env.LOCAL_DATABASE_URL));
+function crearPool(nombre, url) {
+  const pool = new pg.Pool(poolConfig(url));
+  // Neon cierra conexiones inactivas; sin este handler el proceso se cae.
+  pool.on("error", (error) => console.error(`pool ${nombre}:`, error.message));
+  return pool;
+}
+
+export const central = crearPool("central", config.centralUrl);
+export const local = crearPool("local", config.localUrl);
 
 export async function withTx(pool, fn) {
   const client = await pool.connect();

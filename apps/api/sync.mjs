@@ -1,4 +1,6 @@
-import { central, local, runtime } from "./db.mjs";
+import { central, local, runtime, withTx } from "./db.mjs";
+import { config } from "./config.mjs";
+import { aplicarEvento } from "./sync/handlers/index.mjs";
 
 export const link = {
   force: null,
@@ -80,180 +82,32 @@ export async function probeCentral() {
   return estadoReal();
 }
 
-async function dejarConflicto(client, idEmpleado, tipo, detalle) {
-  await client.query(
-    `insert into sync_conflicto (id_empleado, tipo, detalle) values ($1, $2, $3)`,
-    [idEmpleado, tipo, String(detalle || "").slice(0, 400)],
-  );
-}
+// Máximo de lotes por llamada: acota el tiempo de un ciclo cuando el nodo viene muy atrasado.
+const MAX_LOTES = 20;
 
-async function applyEvent(client, event, idTienda) {
-  const payload = event.payload;
-  if (event.tipo_evento === "TIENDA_UPSERT") {
-    await client.query(
-      `insert into tienda_ref (id_tienda, nombre, activa, es_tienda_local)
-       values ($1, $2, $3, $4)
-       on conflict (id_tienda) do update
-       set nombre = excluded.nombre, activa = excluded.activa, es_tienda_local = excluded.es_tienda_local`,
-      [payload.id_tienda, payload.nombre, payload.activa, Number(payload.id_tienda) === Number(idTienda)],
-    );
-    return;
-  }
-  if (event.tipo_evento === "ROL_UPSERT") {
-    await client.query(
-      `insert into rol_ref (id_rol, nombre) values ($1, $2)
-       on conflict (id_rol) do update set nombre = excluded.nombre`,
-      [payload.id_rol, payload.nombre],
-    );
-    return;
-  }
-  if (event.tipo_evento === "PERMISO_UPSERT") {
-    await client.query(
-      `insert into permiso_ref (id_permiso, codigo, descripcion) values ($1, $2, $3)
-       on conflict (id_permiso) do update set codigo = excluded.codigo, descripcion = excluded.descripcion`,
-      [payload.id_permiso, payload.codigo, payload.descripcion],
-    );
-    return;
-  }
-  if (event.tipo_evento === "ROL_PERMISO_SET") {
-    await client.query("delete from rol_permiso_ref where id_rol = $1", [payload.id_rol]);
-    for (const permiso of payload.permisos || []) {
-      await client.query(
-        `insert into permiso_ref (id_permiso, codigo) values ($1, $2)
-         on conflict (id_permiso) do update set codigo = excluded.codigo`,
-        [permiso.id_permiso, permiso.codigo],
-      );
-      await client.query(
-        "insert into rol_permiso_ref (id_rol, id_permiso) values ($1, $2) on conflict do nothing",
-        [payload.id_rol, permiso.id_permiso],
-      );
-    }
-    return;
-  }
-  if (event.tipo_evento === "EMPLEADO_UPSERT") {
-    const current = await client.query(
-      "select version_credencial from empleado_ref where id_empleado = $1",
-      [payload.id_empleado],
-    );
-    if (current.rowCount > 0 && Number(event.version_credencial) < Number(current.rows[0].version_credencial)) {
-      await dejarConflicto(
-        client,
-        payload.id_empleado,
-        "VERSION",
-        `empleado version ${event.version_credencial} < local ${current.rows[0].version_credencial}`,
-      );
-      return;
-    }
-    const fuera = Number(payload.id_tienda) !== Number(idTienda);
-    await client.query(
-      `insert into empleado_ref (
-         id_empleado, id_rol, id_tienda, nombre_completo, usuario, activo, contrasena_hash, version_credencial, fecha_baja
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       on conflict (id_empleado) do update set
-         id_rol = excluded.id_rol,
-         id_tienda = excluded.id_tienda,
-         nombre_completo = excluded.nombre_completo,
-         usuario = excluded.usuario,
-         activo = excluded.activo,
-         contrasena_hash = excluded.contrasena_hash,
-         version_credencial = excluded.version_credencial,
-         fecha_baja = excluded.fecha_baja`,
-      [
-        payload.id_empleado,
-        payload.id_rol,
-        payload.id_tienda,
-        payload.nombre_completo,
-        payload.usuario,
-        fuera ? false : payload.activo,
-        fuera ? null : payload.contrasena_hash,
-        payload.version_credencial,
-        payload.fecha_baja || null,
-      ],
-    );
-    if (fuera || payload.activo === false || payload.fecha_baja) {
-      await client.query("update sesion_activa set revocada = true where id_empleado = $1 and revocada = false", [
-        payload.id_empleado,
-      ]);
-    }
-    return;
-  }
-  if (event.tipo_evento === "CONTROL_ACCESO_SNAPSHOT") {
-    const row = await client.query(
-      `select c.id_snapshot, c.epoch, c.provisional, c.bloqueado_hasta, e.version_credencial,
-              (c.provisional and c.bloqueado_hasta > now()) as provisional_vigente
-       from empleado_ref e
-       left join control_acceso c on c.id_empleado = e.id_empleado
-       where e.id_empleado = $1`,
-      [payload.id_empleado],
-    );
-    if (row.rowCount === 0) return;
-    const localRow = row.rows[0];
-    if (localRow.id_snapshot != null && Number(payload.id_snapshot) <= Number(localRow.id_snapshot)) return;
-    if (Number(event.version_credencial) < Number(localRow.version_credencial)) {
-      await dejarConflicto(
-        client,
-        payload.id_empleado,
-        "VERSION",
-        `snapshot ${payload.id_snapshot} version ${event.version_credencial} < local ${localRow.version_credencial}`,
-      );
-      return;
-    }
-    if (
-      localRow.provisional_vigente &&
-      payload.estado === "ACTIVO" &&
-      Number(payload.epoch) === Number(localRow.epoch)
-    ) {
-      return;
-    }
-    await client.query(
-      `insert into control_acceso (id_empleado, epoch, intentos_en_epoch, estado, bloqueado_hasta, provisional, provisional_hasta, id_snapshot)
-       values ($1, $2, $3, $4, $5, false, null, $6)
-       on conflict (id_empleado) do update set
-         epoch = excluded.epoch,
-         intentos_en_epoch = excluded.intentos_en_epoch,
-         estado = excluded.estado,
-         bloqueado_hasta = excluded.bloqueado_hasta,
-         provisional = false,
-         provisional_hasta = null,
-         id_snapshot = excluded.id_snapshot`,
-      [
-        payload.id_empleado,
-        payload.epoch,
-        payload.intentos_en_epoch,
-        payload.estado,
-        payload.bloqueado_hasta,
-        payload.id_snapshot,
-      ],
-    );
-    return;
-  }
-  if (event.tipo_evento === "SESION_REVOCAR") {
-    await client.query("update sesion_activa set revocada = true where id_empleado = $1 and revocada = false", [
-      payload.id_empleado,
-    ]);
-  }
-}
-
-export async function pullReplica(idTienda = runtime.tiendaId) {
-  if (!centralAlcanzable()) return { applied: 0, skipped: true };
-  const cursor = await local.query("select ultimo_evento_visto from replica_cursor where id_tienda = $1", [idTienda]);
-  let seen = Number(cursor.rows[0]?.ultimo_evento_visto || 0);
+async function aplicarLote(idTienda, seen) {
   const events = await central.query(
     `select id_evento, id_tienda_destino, tipo_evento, version_credencial, payload
      from replica_evento
      where id_evento > $1
-     order by id_evento`,
-    [seen],
+     order by id_evento
+     limit $2`,
+    [seen, config.syncLote],
   );
   const client = await local.connect();
   let applied = 0;
+  let hueco = false;
   try {
     await client.query("begin");
     for (const event of events.rows) {
-      if (Number(event.id_evento) !== seen + 1) break;
+      // El log es contiguo; un hueco significa una escritura aún no visible: se reintenta en el próximo ciclo.
+      if (Number(event.id_evento) !== seen + 1) {
+        hueco = true;
+        break;
+      }
       const destino = event.id_tienda_destino;
       if (destino == null || Number(destino) === Number(idTienda)) {
-        await applyEvent(client, event, idTienda);
+        await aplicarEvento(client, event, idTienda);
         applied += 1;
       }
       seen = Number(event.id_evento);
@@ -266,18 +120,38 @@ export async function pullReplica(idTienda = runtime.tiendaId) {
       [idTienda, seen],
     );
     await client.query("commit");
-    link.ultimaSync = new Date().toISOString();
   } catch (error) {
     await client.query("rollback");
     throw error;
   } finally {
     client.release();
   }
+  const completo = !hueco && events.rowCount === config.syncLote;
+  return { applied, seen, otroLote: completo };
+}
+
+export async function pullReplica(idTienda = runtime.tiendaId) {
+  if (!centralAlcanzable()) return { applied: 0, skipped: true };
+  const cursor = await local.query("select ultimo_evento_visto from replica_cursor where id_tienda = $1", [idTienda]);
+  let seen = Number(cursor.rows[0]?.ultimo_evento_visto || 0);
+  let applied = 0;
+  for (let lote = 0; lote < MAX_LOTES; lote += 1) {
+    const result = await aplicarLote(idTienda, seen);
+    applied += result.applied;
+    seen = result.seen;
+    if (!result.otroLote) break;
+  }
+  link.ultimaSync = new Date().toISOString();
   return { applied, cursor: seen };
 }
 
-function escLiteral(v) {
-  return "'" + String(v).replace(/'/g, "''") + "'";
+async function foldEvento(client, idTienda, event) {
+  await client.query("select fold_evento($1, $2, $3, $4::jsonb)", [
+    idTienda,
+    event.idempotency_key,
+    event.tipo_evento,
+    JSON.stringify(event.payload),
+  ]);
 }
 
 export async function flushOutbox(idTienda = runtime.tiendaId) {
@@ -308,13 +182,10 @@ export async function flushOutbox(idTienda = runtime.tiendaId) {
   }
   if (enviables.length === 0) return { sent: 0 };
   try {
-    const sql = enviables
-      .map(
-        (event) =>
-          `select fold_evento(${Number(idTienda)}, ${escLiteral(event.idempotency_key)}, ${escLiteral(event.tipo_evento)}, ${escLiteral(JSON.stringify(event.payload))}::jsonb);`,
-      )
-      .join("\n");
-    await central.query(sql);
+    // Todo el lote en una transacción del central, en orden y con parámetros.
+    await withTx(central, async (client) => {
+      for (const event of enviables) await foldEvento(client, idTienda, event);
+    });
     await local.query(
       "update outbox_sync set estado = 'ENVIADO' where id_outbox = any($1::bigint[])",
       [enviables.map((event) => Number(event.id_outbox))],
@@ -327,12 +198,7 @@ export async function flushOutbox(idTienda = runtime.tiendaId) {
       const empKey = event.id_empleado == null ? "null" : String(event.id_empleado);
       if (bloqueados.has(empKey)) continue;
       try {
-        await central.query("select fold_evento($1, $2, $3, $4::jsonb)", [
-          idTienda,
-          event.idempotency_key,
-          event.tipo_evento,
-          JSON.stringify(event.payload),
-        ]);
+        await foldEvento(central, idTienda, event);
         await local.query("update outbox_sync set estado = 'ENVIADO' where id_outbox = $1", [event.id_outbox]);
         sent += 1;
       } catch {
