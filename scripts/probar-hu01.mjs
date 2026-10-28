@@ -1,12 +1,12 @@
 // Pruebas de HU-01 (búsqueda, filtros, existencias en la red, STOCK_SNAPSHOT, offline y RNF-05).
-// ESCRIBE en las bases del .env (migración, datos demo, sesiones y auditoría): ejecutar contra un clon
-// o una rama de Neon, nunca contra la base principal. Con URLs de Neon se niega a correr salvo PERMITIR_NEON=1.
+// ESCRIBE en las bases del .env (migración, datos demo, sesiones y auditoría): ejecutar contra bases
+// de prueba, nunca contra la base principal. Con URLs de Neon se niega a correr salvo PERMITIR_NEON=1.
 // La prueba de rendimiento crea 2.000 medicamentos dentro de una transacción que se revierte al final.
 import crypto from "crypto";
 import { config } from "../apps/api/config.mjs";
 
 if ([config.centralUrl, config.localUrl].some((url) => url.includes("neon.tech")) && process.env.PERMITIR_NEON !== "1") {
-  console.error("Las bases del .env son de Neon. Use un clon local, o PERMITIR_NEON=1 si apuntan a una rama de prueba.");
+  console.error("Las bases del .env son de Neon. Use bases de prueba, o PERMITIR_NEON=1 si apuntan a una rama de prueba de Neon.");
   process.exit(2);
 }
 
@@ -15,7 +15,7 @@ const { migrate } = await import("../apps/api/migrate.mjs");
 const { login, autorizar } = await import("../apps/api/auth.mjs");
 const { link, pullReplica } = await import("../apps/api/sync.mjs");
 const { seedLocalDemo } = await import("../apps/api/demo.mjs");
-const { buscar, existenciasEnRed, listarCategorias, listarTiendas } = await import("../apps/api/inventario/busqueda.mjs");
+const { buscar, existenciasEnRed, listarCategorias, listarTiendas, TIMEOUT_RED_MS } = await import("../apps/api/inventario/busqueda.mjs");
 const { aplicarEnCentral } = await import("../apps/api/sync/central.mjs");
 
 const fallos = [];
@@ -151,6 +151,26 @@ check("offline: la red responde 503 SIN_CONEXION (no lista vacía)", redOffline?
 const otraOffline = await error(() => buscar({ q: "ac", tienda: idRed }, ctx));
 check("offline: filtro por otra tienda responde 503", otraOffline?.status === 503);
 link.estado = estadoPrevio;
+
+// --- Central lento (RNF-05): la red se corta a los 1,5 s y la búsqueda local no espera ---
+const consultaOriginal = central.query;
+central.query = (...args) => new Promise((resolve, reject) => {
+  setTimeout(() => consultaOriginal.apply(central, args).then(resolve, reject), 2500);
+});
+try {
+  const inicioLento = performance.now();
+  const lenta = await error(() => existenciasEnRed(med001.id_medicamento, {}, ctx));
+  const msLenta = performance.now() - inicioLento;
+  check("central lento: 503 SIN_CONEXION al vencer el timeout", lenta?.status === 503 && lenta?.codigo === "SIN_CONEXION");
+  check("central lento: responde en menos de 2 s", msLenta < 2000 && msLenta >= TIMEOUT_RED_MS - 50, `${msLenta.toFixed(0)} ms`);
+  const inicioLocal = performance.now();
+  const localConCentralLento = await buscar({ q: "acetaminofen" }, ctx);
+  check("central lento: la búsqueda local no lo espera", localConCentralLento.total === acet.total && performance.now() - inicioLocal < 1000);
+} finally {
+  central.query = consultaOriginal;
+}
+// Deja terminar la consulta retrasada antes de seguir, para no cruzarla con las siguientes.
+await new Promise((resolve) => setTimeout(resolve, 1200));
 
 // --- RNF-05 y filtro de estado con catálogo grande (2.000 medicamentos, se revierten) ---
 const client = await local.connect();
