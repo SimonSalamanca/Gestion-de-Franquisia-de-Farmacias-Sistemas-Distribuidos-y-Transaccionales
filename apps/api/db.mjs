@@ -9,6 +9,9 @@ pg.types.setTypeParser(pg.types.builtins.TIMESTAMP, (value) =>
   value === "infinity" || value === "-infinity" ? value : new Date(`${value.replace(" ", "T")}Z`),
 );
 pg.defaults.parseInputDatesAsUTC = true;
+// Las columnas "date" (p. ej. fecha_caducidad) se leen como texto AAAA-MM-DD: un Date de JavaScript
+// las pondría a medianoche local y podría correr el día.
+pg.types.setTypeParser(pg.types.builtins.DATE, (value) => value);
 
 export const LOCAL_TIENDA_ID = config.tiendaId;
 export const runtime = { tiendaId: LOCAL_TIENDA_ID };

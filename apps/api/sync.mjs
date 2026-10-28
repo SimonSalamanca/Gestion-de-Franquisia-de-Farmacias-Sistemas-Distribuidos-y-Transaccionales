@@ -1,6 +1,7 @@
 import { central, local, runtime, withTx } from "./db.mjs";
 import { config } from "./config.mjs";
 import { aplicarEvento } from "./sync/handlers/index.mjs";
+import { aplicarEnCentral } from "./sync/central.mjs";
 
 export const link = {
   force: null,
@@ -145,15 +146,6 @@ export async function pullReplica(idTienda = runtime.tiendaId) {
   return { applied, cursor: seen };
 }
 
-async function foldEvento(client, idTienda, event) {
-  await client.query("select fold_evento($1, $2, $3, $4::jsonb)", [
-    idTienda,
-    event.idempotency_key,
-    event.tipo_evento,
-    JSON.stringify(event.payload),
-  ]);
-}
-
 export async function flushOutbox(idTienda = runtime.tiendaId) {
   if (!centralAlcanzable()) return { sent: 0 };
   const allPending = await local.query(
@@ -184,7 +176,7 @@ export async function flushOutbox(idTienda = runtime.tiendaId) {
   try {
     // Todo el lote en una transacción del central, en orden y con parámetros.
     await withTx(central, async (client) => {
-      for (const event of enviables) await foldEvento(client, idTienda, event);
+      for (const event of enviables) await aplicarEnCentral(client, idTienda, event);
     });
     await local.query(
       "update outbox_sync set estado = 'ENVIADO' where id_outbox = any($1::bigint[])",
@@ -198,7 +190,7 @@ export async function flushOutbox(idTienda = runtime.tiendaId) {
       const empKey = event.id_empleado == null ? "null" : String(event.id_empleado);
       if (bloqueados.has(empKey)) continue;
       try {
-        await foldEvento(central, idTienda, event);
+        await withTx(central, (client) => aplicarEnCentral(client, idTienda, event));
         await local.query("update outbox_sync set estado = 'ENVIADO' where id_outbox = $1", [event.id_outbox]);
         sent += 1;
       } catch {

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { api } from "./api.js";
+import Inventario from "./Inventario.jsx";
 
 const CUENTAS = [
   { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
@@ -18,20 +20,6 @@ const AMBITO = {
   TIENDA_GESTIONAR: "red",
   REPORTE_CONSOLIDADO_VER: "red",
 };
-
-async function api(path, { method = "GET", body, token, key } = {}) {
-  const headers = {};
-  if (body) headers["Content-Type"] = "application/json";
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (key) headers["Idempotency-Key"] = key;
-  const response = await fetch(path, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = response.status === 204 ? {} : await response.json().catch(() => ({}));
-  return { ok: response.ok, status: response.status, data };
-}
 
 export default function App() {
   const [session, setSession] = useState(() => {
@@ -199,6 +187,8 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
   const [activo, setActivo] = useState(null);
   const [detalle, setDetalle] = useState(null);
   const [error, setError] = useState("");
+  // HU-01: el módulo de inventario del POS tiene pantalla propia; el resto muestra la tarjeta del módulo.
+  const esInventario = detalle?.codigo === "INVENTARIO_CONSULTAR" && session.nodo === "local";
 
   async function abrir(codigo) {
     setActivo(codigo);
@@ -261,7 +251,8 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
             </div>
           )}
           {error && <div className="error">{error}{ultimaSync ? ` Última sync: ${new Date(ultimaSync).toLocaleString()}` : ""}</div>}
-          {detalle && (
+          {detalle && esInventario && <Inventario session={session} ultimaSync={ultimaSync} />}
+          {detalle && !esInventario && (
             <article className="module">
               <h2>{detalle.titulo}</h2>
               <p>{detalle.texto}</p>

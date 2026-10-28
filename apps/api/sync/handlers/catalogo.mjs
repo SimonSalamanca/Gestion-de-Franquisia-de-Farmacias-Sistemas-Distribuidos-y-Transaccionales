@@ -1,3 +1,5 @@
+import { dejarConflicto } from "../conflictos.mjs";
+
 // Datos maestros globales replicados desde el central a las tablas _ref.
 
 async function tiendaUpsert(client, event, idTienda) {
@@ -45,9 +47,73 @@ async function rolPermisoSet(client, event) {
   }
 }
 
+// HU-01/HU-02: catálogo de medicamentos y proveedores (RNF-11: agregar uno es un insert).
+
+async function categoriaUpsert(client, event) {
+  const payload = event.payload;
+  await client.query(
+    `insert into categoria_ref (id_categoria, nombre) values ($1, $2)
+     on conflict (id_categoria) do update set nombre = excluded.nombre`,
+    [payload.id_categoria, payload.nombre],
+  );
+}
+
+async function medicamentoUpsert(client, event) {
+  const payload = event.payload;
+  let idCategoria = payload.id_categoria ?? null;
+  if (idCategoria != null) {
+    const categoria = await client.query("select 1 from categoria_ref where id_categoria = $1", [idCategoria]);
+    if (categoria.rowCount === 0) {
+      await dejarConflicto(
+        client,
+        null,
+        "DEPENDENCIA_FALTANTE",
+        `evento ${event.id_evento} MEDICAMENTO_UPSERT: categoría ${idCategoria} no está en categoria_ref`,
+      );
+      idCategoria = null;
+    }
+  }
+  await client.query(
+    `insert into medicamento_ref (
+       id_medicamento, codigo_interno, nombre_comercial, principio_activo, id_categoria,
+       requiere_receta, requiere_refrigeracion, activo
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+     on conflict (id_medicamento) do update set
+       codigo_interno = excluded.codigo_interno,
+       nombre_comercial = excluded.nombre_comercial,
+       principio_activo = excluded.principio_activo,
+       id_categoria = excluded.id_categoria,
+       requiere_receta = excluded.requiere_receta,
+       requiere_refrigeracion = excluded.requiere_refrigeracion,
+       activo = excluded.activo`,
+    [
+      payload.id_medicamento,
+      payload.codigo_interno,
+      payload.nombre_comercial,
+      payload.principio_activo,
+      idCategoria,
+      Boolean(payload.requiere_receta),
+      Boolean(payload.requiere_refrigeracion),
+      payload.activo !== false,
+    ],
+  );
+}
+
+async function proveedorUpsert(client, event) {
+  const payload = event.payload;
+  await client.query(
+    `insert into proveedor_ref (id_proveedor, nombre_empresa, activo) values ($1, $2, $3)
+     on conflict (id_proveedor) do update set nombre_empresa = excluded.nombre_empresa, activo = excluded.activo`,
+    [payload.id_proveedor, payload.nombre_empresa, payload.activo !== false],
+  );
+}
+
 export default {
   TIENDA_UPSERT: tiendaUpsert,
   ROL_UPSERT: rolUpsert,
   PERMISO_UPSERT: permisoUpsert,
   ROL_PERMISO_SET: rolPermisoSet,
+  CATEGORIA_UPSERT: categoriaUpsert,
+  MEDICAMENTO_UPSERT: medicamentoUpsert,
+  PROVEEDOR_UPSERT: proveedorUpsert,
 };
