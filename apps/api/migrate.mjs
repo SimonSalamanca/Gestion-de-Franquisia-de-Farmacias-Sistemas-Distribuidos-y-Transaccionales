@@ -3,6 +3,7 @@ import path from "path";
 import { central, local, runtime } from "./db.mjs";
 import { config, ROOT } from "./config.mjs";
 import { hashPassword } from "./crypto.mjs";
+import { seedCatalogoDemo, seedRedDemo } from "./demo.mjs";
 
 const dbDir = path.join(ROOT, "db");
 
@@ -178,12 +179,46 @@ async function emitirEmpleadosPendientes(client, idTienda) {
   return empleados.rowCount;
 }
 
+// Catálogo de medicamentos (HU-01/HU-02): filas del central que aún no tienen evento de réplica.
+// Categorías antes que medicamentos por la FK de medicamento_ref. Los cambios posteriores a una fila ya
+// publicada los debe publicar la historia que administre el catálogo (no hay una en el sprint 1).
+const CATALOGO = [
+  { tipo: "CATEGORIA_UPSERT", tabla: "categoria", id: "id_categoria", columnas: "id_categoria, nombre" },
+  { tipo: "PROVEEDOR_UPSERT", tabla: "proveedor", id: "id_proveedor", columnas: "id_proveedor, nombre_empresa, activo" },
+  {
+    tipo: "MEDICAMENTO_UPSERT",
+    tabla: "medicamento",
+    id: "id_medicamento",
+    columnas:
+      "id_medicamento, codigo_interno, nombre_comercial, principio_activo, id_categoria, requiere_receta, requiere_refrigeracion, activo",
+  },
+];
+
+async function emitirCatalogoPendiente(client) {
+  let emitidos = 0;
+  for (const { tipo, tabla, id, columnas } of CATALOGO) {
+    const publicados = await client.query(
+      `select distinct (payload ->> '${id}')::integer as id from replica_evento where tipo_evento = $1`,
+      [tipo],
+    );
+    const ya = new Set(publicados.rows.map((row) => row.id));
+    const filas = await client.query(`select ${columnas} from ${tabla} order by ${id}`);
+    for (const fila of filas.rows) {
+      if (ya.has(fila[id])) continue;
+      await client.query("select append_replica_evento(null, $1, 1, $2::jsonb)", [tipo, JSON.stringify(fila)]);
+      emitidos += 1;
+    }
+  }
+  return emitidos;
+}
+
 async function emitCatalog(idTienda) {
   const client = await central.connect();
   try {
     await client.query("begin");
     await emitirCatalogoGlobal(client, idTienda);
     await emitirEmpleadosPendientes(client, idTienda);
+    await emitirCatalogoPendiente(client);
     await client.query("commit");
   } catch (error) {
     await client.query("rollback");
@@ -291,6 +326,13 @@ export async function migrate({ log = () => {} } = {}) {
   runtime.tiendaId = idTienda;
   await localCursor(idTienda);
   if (existe) await emitCatalog(idTienda);
+  if (existe && config.seedDemo) {
+    // Después del catálogo inicial (que exige el log vacío). La segunda emisión publica solo el catálogo
+    // nuevo, y va antes de los umbrales porque el nodo local los aplica en orden y dependen del medicamento.
+    await seedCatalogoDemo();
+    await emitCatalog(idTienda);
+    await seedRedDemo(idTienda);
+  }
   return idTienda;
 }
 

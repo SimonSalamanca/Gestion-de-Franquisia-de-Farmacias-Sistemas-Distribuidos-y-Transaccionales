@@ -9,6 +9,8 @@
     "db:verificar": "node scripts/db-verificar.mjs",
     "test": "node scripts/probar-hu06.mjs && node scripts/db-verificar.mjs",
     "test:hu06": "node scripts/probar-hu06.mjs",
+    "test:hu01": "node scripts/probar-hu01.mjs",
+    "test:hu02": "node scripts/probar-hu02.mjs",
     "web": "npm run dev --prefix apps/web"
   },
   "dependencies": {

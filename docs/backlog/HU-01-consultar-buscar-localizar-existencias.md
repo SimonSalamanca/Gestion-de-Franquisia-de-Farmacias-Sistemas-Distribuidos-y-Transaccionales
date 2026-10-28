@@ -1,6 +1,6 @@
 # HU-01 — Consultar, buscar y localizar existencias de medicamentos entre tiendas
 
-Estado: especificación `BORRADOR` (2026-10-22), alineada con "Documentación proyecto UML" (RF y RNF). Pendiente de revisión antes de implementar.
+Estado: **IMPLEMENTADA** (2026-10-28): API, réplica del catálogo, `STOCK_SNAPSHOT` e interfaz del POS. Pendiente de cerrar: ejecutar `npm run test:hu01` en un clon de las bases. Especificación alineada con "Documentación proyecto UML" (RF y RNF).
 
 Jira: **SDGFCSDF-1** · Sprint 1.
 
@@ -89,11 +89,12 @@ Se usa el permiso existente `INVENTARIO_CONSULTAR`, que ya tienen `cajero`, `adm
 `GET /api/local/inventario/buscar?q=&categoria=&estado=&pagina=`
 
 1. Exige sesión local válida y `INVENTARIO_CONSULTAR`. 401/403 antes de consultar; el 403 registra `ACCESO_DENEGADO` (RNF-01).
-2. `q` obligatorio, de 2 a 80 caracteres después de `trim`. Busca en `nombre_comercial`, `principio_activo` y `codigo_interno` de `medicamento_ref` con `activo = true`.
+2. `q` de 2 a 80 caracteres después de `trim`. Puede ir vacío solo si hay al menos un filtro (explorar, p. ej., "todo lo agotado de Analgésicos"); sin término ni filtros, 400 "Escriba al menos 2 caracteres o elija un filtro". Busca en `nombre_comercial`, `principio_activo` y `codigo_interno` de `medicamento_ref` con `activo = true`.
 3. Comparación sin mayúsculas ni tildes: `translate(lower(col), 'áéíóúüñ', 'aeiouun') like '%' || termino || '%'`, con el término normalizado igual. Se escapan `%`, `_` y `\` del término. Parámetros siempre ligados; nunca concatenación.
 4. Orden de relevancia: código exacto, luego nombre que empieza por el término, luego coincidencia en cualquier parte; desempate por `nombre_comercial`.
 5. Paginación de 25 resultados. Respuesta por ítem: `id_medicamento`, `codigo_interno`, `nombre_comercial`, `principio_activo`, `categoria`, `requiere_receta`, `requiere_refrigeracion`, `stock_tienda`, `estado_stock`, `stock_minimo`.
-6. Los filtros `categoria` (id) y `estado` (`disponible|bajo|agotado`) se combinan con AND.
+6. Los filtros `categoria` (id), `estado` (`disponible|bajo|agotado`) y `tienda` (id; vacío = la propia) se combinan con AND.
+7. En la tienda propia el estado se calcula en SQL y el filtro, el orden y la paginación se aplican en la base, sin tope de coincidencias. Con `tienda` de otra sucursal el stock sale del central, así que el estado se calcula en el API sobre las primeras 5.000 coincidencias del catálogo (`truncado: true` si hay más). Cada ítem trae además `actualizado_en` (hora del reporte de esa tienda; `null` para la propia).
 
 Índices: `medicamento_ref` ya tiene btree en `nombre_comercial` y `principio_activo`. Una búsqueda `like '%…%'` no los usa, pero el catálogo de una cadena de farmacias (miles de filas) se recorre completo en pocos milisegundos. Un índice trigram (`pg_trgm`) sería un cambio de estructura: queda como recomendación si el catálogo crece a cientos de miles.
 
@@ -106,7 +107,7 @@ Se usa el permiso existente `INVENTARIO_CONSULTAR`, que ya tienen `cajero`, `adm
   { "id_tienda": 1, "calculado_en": "2026-10-22T16:00:00.000Z",
     "items": [{ "id_medicamento": 7, "cantidad": 42 }] }
   ```
-  `calculado_en` sale de `now()` de la base local. `id_empleado` del outbox es el responsable del movimiento.
+  `calculado_en` sale de `now()` de la base local. `id_empleado` del outbox va en `NULL`: el outbox ordena por empleado, y así un evento de login atascado de quien hizo el movimiento no frena la publicación del stock. El responsable queda en `movimiento_inventario`.
 - Reconciliación: al arrancar y cada 15 minutos el nodo encola un `STOCK_SNAPSHOT` completo (todos los medicamentos con lotes, incluidos los que quedaron en 0), para corregir cualquier deriva.
 - El envío reutiliza `flushOutbox`. Hoy todo evento del outbox va a `fold_evento` (autenticación). Se agrega un despacho por `tipo_evento` en el código del API: los tipos de HU-06 siguen yendo a `fold_evento`; `STOCK_SNAPSHOT` lo aplica el API en el central, en una transacción:
   1. `insert into inbox_sync (id_tienda_origen, idempotency_key, tipo_evento, payload) … on conflict do nothing`. Si no insertó, es duplicado y no hace nada más.
@@ -252,7 +253,7 @@ Característica: HU-01 Consultar, buscar y localizar existencias entre tiendas
 
   Escenario: Término inválido
     Cuando busca "a"
-    Entonces recibe 400 "Escriba al menos 2 caracteres"
+    Entonces recibe 400 "Escriba al menos 2 caracteres o elija un filtro"
 
   Escenario: Acceso fuera de rol queda registrado
     Dado que una sesión no tiene INVENTARIO_CONSULTAR
@@ -271,6 +272,21 @@ Característica: HU-01 Consultar, buscar y localizar existencias entre tiendas
     Y la sección de la red muestra que no está disponible
 ```
 
+## Pruebas
+
+`npm run test:hu01` (`scripts/probar-hu01.mjs`). Escribe en las bases del `.env`; si las URLs son de Neon se niega a correr salvo `PERMITIR_NEON=1` (para una rama de prueba). Cubre:
+
+- Catálogo replicado y listas de tiendas y categorías.
+- Búsqueda sin tildes ni mayúsculas, por principio activo y por código (código exacto primero), escape de comodines, validaciones 400 y campos de la respuesta.
+- Filtros combinables (categoría AND estado, solo filtros sin término) y paginación.
+- Filtro por otra tienda, 404 de tienda inexistente, existencias de la red sin la tienda propia y en orden.
+- 401 sin sesión; 403 con `ACCESO_DENEGADO` registrado.
+- `STOCK_SNAPSHOT`: duplicado y foto vieja no cambian el consolidado.
+- Sin conexión: la búsqueda local sigue y la red responde 503 `SIN_CONEXION`.
+- RNF-05: p95 de 100 búsquedas con 2.000 medicamentos extra creados en una transacción que se revierte; el filtro de estado cuenta todo el catálogo.
+
+No se prueba automáticamente el timeout de 1,5 s del central ni la interfaz (se revisa a mano con `npm run dev`).
+
 ## Ciclo
 
 | Paso | Resultado |
@@ -279,3 +295,4 @@ Característica: HU-01 Consultar, buscar y localizar existencias entre tiendas
 | Alineación con el documento de requerimientos | RF-01, RF-03 y RNF-01/03/04/05/07/13 incorporados. "Tiempo real" resuelto con RNF-13 y el diagrama de componentes. Timeout de la red ajustado a 1,5 s por RNF-05 |
 | Contexto del sprint 1 | Sin ventas en el sprint: el criterio 4 se demuestra con reabastecimientos y ajustes de HU-02. Catálogo desde datos demo (no hay historia de alta de medicamentos) |
 | Decisiones abiertas | Ninguna |
+| Implementación (2026-10-28) | API y réplica en `dev-cimientos`; interfaz `apps/web/src/Inventario.jsx`; filtro de estado movido a SQL para no perder resultados con catálogos grandes; campo `stock_tienda` como dice la especificación; pruebas `probar-hu01.mjs` |

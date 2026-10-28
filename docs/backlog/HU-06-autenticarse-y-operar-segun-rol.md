@@ -1,10 +1,12 @@
 # HU-06 — Autenticarse y operar según el rol asignado
 
-Estado: lógica `APROBADO` por `co-orquestador-auditor` (2026-10-15).
+Estado: **TERMINADA** (Sprint 1, Jira SDGFCSDF-6). Lógica `APROBADO` por `co-orquestador-auditor` (2026-10-15); código alineado en el commit `acb86cd` y cubierto por `npm run test:hu06`.
 
 `analista-contexto` no pudo iniciar (modelo `open-code/muse-spark-1.3-free` no disponible). La contraste de campos se hizo leyendo `Script_BDFarmacias_nodo_central.sql`, `Script_BDFarmacias_nodo_farmacia.sql`, `db/hu06_central.sql` y `db/hu06_local.sql`.
 
-El corte de código en `apps/api` no está alineado con esta lógica. No se toma como cumplimiento de la historia hasta aplicar las correcciones de abajo.
+Revisión del código (2026-10-28) contra los puntos `NO APROBADO` del primer corte: `id_snapshot` sale de `nextval('control_acceso_snapshot_seq')` bajo `FOR UPDATE`; `append_replica_evento` numera con `MAX+1` serializado por `pg_advisory_xact_lock` (ids contiguos, que el cursor necesita); hay cuarentena de usuarios duplicados y backfill de `empleado_ref.id_tienda` en `migrate.mjs`; el breaker usa probes reales y `forzado` va aparte de `estado_real`; el pliegue es solo `fold_evento` en el central.
+
+`backfillTienda` (en `migrate.mjs`) rellena `empleado_ref.id_tienda` y aplica `NOT NULL` cuando ya no quedan nulos. Desde HU-01 el outbox envía también otros tipos de evento: `sync/central.mjs` despacha por `tipo_evento` y los de HU-06 siguen yendo a `fold_evento`.
 
 Frontend previsto: React. Ocultar un módulo no autoriza. El API del nodo relee el permiso en cada request.
 
@@ -239,3 +241,4 @@ Característica: HU-06 Autenticarse y operar según el rol asignado
 | Auditor, corte de `apps/api` | `NO APROBADO`: cursor, doble fold, reloj JS, `MAX+1`, breaker simulado, SUCCESS obsoleto, UNIQUE sin cuarentena |
 | Auditor, lógica corregida de este documento | `APROBADO` |
 | `analista-contexto` | No inició. Validación directa contra los SQL citados |
+| Código alineado (`acb86cd`) | Puntos `NO APROBADO` corregidos; pruebas en `scripts/probar-hu06.mjs`. Historia terminada |
