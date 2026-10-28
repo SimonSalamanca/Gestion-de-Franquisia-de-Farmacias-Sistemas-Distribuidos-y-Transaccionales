@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
+import { DetalleMedicamento, Indicadores } from "./inventarioUi.jsx";
 
 // HU-01: búsqueda de medicamentos con filtros combinables y existencias en la red (RF-01, RF-03).
 // Refresca cada 5 s mientras la pantalla está visible; la red puede ir atrasada (RNF-13).
@@ -53,6 +54,8 @@ export default function Inventario({ session, ultimaSync }) {
   // Panel "Disponible en otras tiendas" por medicamento: { abierto, datos, error }.
   const [red, setRed] = useState({});
   const [ahora, setAhora] = useState(() => Date.now());
+  // HU-02: detalle del medicamento (condiciones especiales, lotes e historial) abierto en la lista.
+  const [detalle, setDetalle] = useState(null);
   const pedido = useRef(0);
   // Refs para leer el valor actual sin volver a disparar la búsqueda cuando cambian.
   const ultimaSyncRef = useRef(ultimaSync);
@@ -221,14 +224,13 @@ export default function Inventario({ session, ultimaSync }) {
                 <li key={item.id_medicamento} className="inv-item">
                   <div className="inv-fila">
                     <div>
-                      <strong>{item.nombre_comercial}</strong>
+                      <button className="enlace" onClick={() => setDetalle(detalle === item.id_medicamento ? null : item.id_medicamento)}>
+                        {item.nombre_comercial}
+                      </button>
                       <div className="muted">
                         {item.principio_activo} · {item.codigo_interno}{item.categoria ? ` · ${item.categoria}` : ""}
                       </div>
-                      <div className="inv-marcas">
-                        {item.requiere_receta && <span className="badge">Requiere receta</span>}
-                        {item.requiere_refrigeracion && <span className="badge frio">Refrigeración</span>}
-                      </div>
+                      <div className="inv-marcas"><Indicadores medicamento={item} /></div>
                     </div>
                     <div className="inv-stock">
                       <span className="inv-cantidad">{item.stock_tienda}</span>
@@ -243,6 +245,9 @@ export default function Inventario({ session, ultimaSync }) {
                       </button>
                     </div>
                   </div>
+                  {detalle === item.id_medicamento && (
+                    <DetalleMedicamento token={session.token} idMedicamento={item.id_medicamento} onCerrar={() => setDetalle(null)} />
+                  )}
                   {panel?.abierto && <PanelRed panel={panel} ahora={ahora} />}
                 </li>
               );

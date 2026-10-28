@@ -1,6 +1,6 @@
 # HU-01 — Consultar, buscar y localizar existencias de medicamentos entre tiendas
 
-Estado: **IMPLEMENTADA** (2026-10-28): API, réplica del catálogo, `STOCK_SNAPSHOT` e interfaz del POS. Pendiente de cerrar: ejecutar `npm run test:hu01` en un clon de las bases. Especificación alineada con "Documentación proyecto UML" (RF y RNF).
+Estado: **IMPLEMENTADA** (2026-10-28): API, réplica del catálogo, `STOCK_SNAPSHOT` e interfaz del POS. Pruebas en verde (ver "Pruebas"). Especificación alineada con "Documentación proyecto UML" (RF y RNF).
 
 Jira: **SDGFCSDF-1** · Sprint 1.
 
@@ -285,7 +285,9 @@ Característica: HU-01 Consultar, buscar y localizar existencias entre tiendas
 - Sin conexión: la búsqueda local sigue y la red responde 503 `SIN_CONEXION`.
 - RNF-05: p95 de 100 búsquedas con 2.000 medicamentos extra creados en una transacción que se revierte; el filtro de estado cuenta todo el catálogo.
 
-No se prueba automáticamente el timeout de 1,5 s del central ni la interfaz (se revisa a mano con `npm run dev`).
+- Central lento (respuestas retrasadas 2,5 s): la red responde 503 al vencer los 1,5 s y la búsqueda local no lo espera.
+
+Resultado (2026-10-28): `test:hu01`, `test:hu02` y `test:hu06` en verde sobre el nodo central y el nodo local de la tienda. La interfaz se verificó con un recorrido automatizado en Chrome (cajero y administrador, escritorio y móvil, sin errores de JavaScript).
 
 ## Ciclo
 

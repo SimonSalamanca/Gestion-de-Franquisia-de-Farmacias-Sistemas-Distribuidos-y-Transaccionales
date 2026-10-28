@@ -126,6 +126,11 @@ code { font-size: 12px; color: #5d726b; }
 @media (max-width: 860px) {
   .login-shell, .workspace { grid-template-columns: 1fr; }
   .brand { padding: 28px; }
+  /* En pantallas angostas la barra superior baja a varias líneas en lugar de desbordar. */
+  .topbar, .topbar .row, .identity { flex-wrap: wrap; }
+  .topbar { padding: 12px 16px; }
+  .content { padding: 16px; }
+  .inventario { padding: 16px; }
 }
 
 /* HU-01: inventario del POS */
@@ -143,7 +148,7 @@ code { font-size: 12px; color: #5d726b; }
 .inv-cabecera h2 { margin: 0 0 4px; }
 .inv-filtros {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
   margin: 16px 0 8px;
 }
@@ -167,4 +172,40 @@ code { font-size: 12px; color: #5d726b; }
   .inv-filtros { grid-template-columns: 1fr; }
   .inv-fila { flex-direction: column; align-items: flex-start; }
   .inv-stock { justify-content: flex-start; }
+}
+
+/* HU-02: lotes, recepción e historial */
+.badge.receta { background: #f1e9fb; color: #5b2a86; }
+.indicadores { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.pill.lote-disponible { background: #e5f6ee; color: #0e7a45; }
+.pill.lote-agotado { background: #eef1f0; color: #5d726b; }
+.pill.lote-bloqueado { background: #fde8e6; color: #9f2218; }
+.inv-item.por-vencer, tr.por-vencer { background: #fffaf0; }
+.inv-item.vencido, tr.vencido { background: #fff4f2; }
+.enlace { background: none; border: 0; padding: 0; color: #145243; font-weight: 650; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
+.detalle-med, .historial { margin-top: 12px; padding: 12px; border: 1px solid #d7e2dc; border-radius: 10px; }
+.detalle-cabecera { justify-content: space-between; align-items: center; }
+.aviso-frio { background: #e3effc; color: #1d4f8a; border-radius: 10px; padding: 8px 12px; }
+.tabla-scroll { overflow-x: auto; }
+.tabla { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+.tabla th { text-align: left; font-weight: 600; color: #5d726b; padding: 6px 8px; border-bottom: 1px solid #d7e2dc; }
+.tabla td { padding: 6px 8px; border-top: 1px solid #e3ebe7; vertical-align: top; }
+.tabla .num { text-align: right; }
+.tabla td.suma { color: #0e7a45; font-weight: 600; }
+.tabla td.resta { color: #9f2218; font-weight: 600; }
+.pestanas { display: flex; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
+.pestanas button { background: white; border: 1px solid #d7e2dc; border-radius: 10px; padding: 9px 14px; }
+.pestanas button.active { border-color: #1b7a62; background: #e7f2ee; }
+.inv-filtros.dos { grid-template-columns: 1fr 1fr; }
+.inv-filtros.tres { grid-template-columns: 1fr 1fr 1fr; }
+.formulario { max-width: 720px; }
+.subform { margin-top: 12px; }
+.invalido, .invalido input { border-color: #c4473b; }
+.ok { background: #e5f6ee; color: #0e7a45; border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
+.opciones { list-style: none; margin: 4px 0 0; padding: 0; border: 1px solid #d7e2dc; border-radius: 10px; overflow: hidden; }
+.opciones button { width: 100%; text-align: left; background: white; border: 0; border-top: 1px solid #eef3f0; padding: 9px 12px; }
+.opciones li:first-child button { border-top: 0; }
+.elegido { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 1px solid #d7e2dc; border-radius: 10px; padding: 10px 12px; }
+@media (max-width: 860px) {
+  .inv-filtros.dos, .inv-filtros.tres { grid-template-columns: 1fr; }
 }

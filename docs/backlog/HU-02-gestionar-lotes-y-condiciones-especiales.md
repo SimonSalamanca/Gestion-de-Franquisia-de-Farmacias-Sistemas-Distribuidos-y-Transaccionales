@@ -1,6 +1,6 @@
 # HU-02 — Gestionar lotes y condiciones especiales de almacenamiento
 
-Estado: especificación `BORRADOR` (2026-10-22), alineada con "Documentación proyecto UML" (RF y RNF). Pendiente de revisión antes de implementar.
+Estado: **IMPLEMENTADA** (2026-10-28): API, réplica de proveedores y permiso, y pantalla "Lotes y recepción" del POS con indicadores, detalle del medicamento e historial. Pruebas: `npm run test:hu02`. Especificación alineada con "Documentación proyecto UML" (RF y RNF).
 
 Jira: **SDGFCSDF-2** · Sprint 1.
 
@@ -346,3 +346,4 @@ Característica: HU-02 Gestionar lotes y condiciones especiales de almacenamient
 | Contexto del sprint 1 | Ventas, devoluciones y pedidos fuera del sprint; recepción con pedido demo; catálogo demo; nombres de acción a acordar con HU-07 |
 | Decisiones del equipo | Aprobado: columna `movimiento_inventario.sentido` (excepción a la regla de no cambiar estructura). Aprobado: `auth_operacion` como tabla de idempotencia también para inventario |
 | Decisiones abiertas | Ninguna |
+| Implementación (2026-10-28) | Backend en `f68dc71` (`npm run test:hu02` en verde). Interfaz: `apps/web/src/Lotes.jsx` (lotes con ajustes, registro manual, recepción de pedido) y `apps/web/src/inventarioUi.jsx` (indicadores ❄/℞, detalle del medicamento, historial con saldo acumulado), también usados desde Inventario (HU-01) para el cajero |

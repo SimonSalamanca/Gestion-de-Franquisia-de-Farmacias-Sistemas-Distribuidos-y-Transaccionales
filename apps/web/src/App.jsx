@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api.js";
 import Inventario from "./Inventario.jsx";
+import Lotes from "./Lotes.jsx";
 
 const CUENTAS = [
   { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
@@ -10,6 +11,7 @@ const CUENTAS = [
 
 const AMBITO = {
   INVENTARIO_CONSULTAR: "tienda",
+  INVENTARIO_GESTIONAR: "tienda",
   VENTA_REGISTRAR: "tienda",
   FACTURA_ANULAR: "tienda",
   PRECIO_GESTIONAR: "tienda",
@@ -20,6 +22,9 @@ const AMBITO = {
   TIENDA_GESTIONAR: "red",
   REPORTE_CONSOLIDADO_VER: "red",
 };
+
+// HU-01 y HU-02: los módulos de inventario del POS tienen pantalla propia; el resto muestra la tarjeta del módulo.
+const PANTALLAS = { INVENTARIO_CONSULTAR: Inventario, INVENTARIO_GESTIONAR: Lotes };
 
 export default function App() {
   const [session, setSession] = useState(() => {
@@ -187,8 +192,7 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
   const [activo, setActivo] = useState(null);
   const [detalle, setDetalle] = useState(null);
   const [error, setError] = useState("");
-  // HU-01: el módulo de inventario del POS tiene pantalla propia; el resto muestra la tarjeta del módulo.
-  const esInventario = detalle?.codigo === "INVENTARIO_CONSULTAR" && session.nodo === "local";
+  const Pantalla = session.nodo === "local" ? PANTALLAS[detalle?.codigo] : null;
 
   async function abrir(codigo) {
     setActivo(codigo);
@@ -251,8 +255,8 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
             </div>
           )}
           {error && <div className="error">{error}{ultimaSync ? ` Última sync: ${new Date(ultimaSync).toLocaleString()}` : ""}</div>}
-          {detalle && esInventario && <Inventario session={session} ultimaSync={ultimaSync} />}
-          {detalle && !esInventario && (
+          {detalle && Pantalla && <Pantalla key={detalle.codigo} session={session} ultimaSync={ultimaSync} />}
+          {detalle && !Pantalla && (
             <article className="module">
               <h2>{detalle.titulo}</h2>
               <p>{detalle.texto}</p>
