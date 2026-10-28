@@ -337,6 +337,10 @@ Característica: HU-02 Gestionar lotes y condiciones especiales de almacenamient
     Pero un AJUSTE de 8 con motivo "Vencido" sí se aplica
 ```
 
+## Ejecución en Neon
+
+Ver "Ejecución en Neon" en HU-01: primer arranque, latencia y tiempos por operación (registro ~1,7 s, ajuste ~1,3 s, recepción ~2,6 s con 2 líneas) y qué pruebas correr en la base compartida.
+
 ## Ciclo
 
 | Paso | Resultado |

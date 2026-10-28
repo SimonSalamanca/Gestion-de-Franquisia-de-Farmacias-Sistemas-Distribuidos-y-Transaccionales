@@ -17,8 +17,10 @@ export const LOCAL_TIENDA_ID = config.tiendaId;
 export const runtime = { tiendaId: LOCAL_TIENDA_ID };
 export const PEPPER = config.pepper;
 
+// Abrir una conexión TLS hacia Neon cuesta ~0,8 s: se conservan las conexiones inactivas 2 minutos
+// (el valor por defecto de pg es 10 s) y keepAlive detecta las que Neon cierre por su lado.
 function poolConfig(url) {
-  return { connectionString: url, ssl: { rejectUnauthorized: false }, max: 4 };
+  return { connectionString: url, ssl: { rejectUnauthorized: false }, max: 4, idleTimeoutMillis: 120000, keepAlive: true };
 }
 
 function crearPool(nombre, url) {

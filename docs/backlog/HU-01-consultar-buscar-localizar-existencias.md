@@ -293,6 +293,39 @@ Orden de ejecución: `test:hu01`, `test:hu02` y `test:hu06` manipulan las bases 
 
 Resultado (2026-10-28): `test:hu01`, `test:hu02`, `test:hu06` y `test:sync` en verde sobre el nodo central y el nodo local de la tienda (sincronización medida: 8–10 s). La interfaz se verificó con un recorrido automatizado en Chrome (cajero y administrador, escritorio y móvil, sin errores de JavaScript).
 
+## Ejecución en Neon (HU-01 y HU-02)
+
+Estado de Neon al 2026-10-28 (lectura): central con una tienda (Farmacia Centro), sin categorías ni proveedores y un medicamento; local sin catálogo replicado, sin lotes y sin la columna `sentido`. HU-01 y HU-02 no tienen datos con qué operar hasta el primer arranque.
+
+**Primer arranque** (`npm run dev` o `npm run db:migrate` con el `.env` de Neon). Ensayado sobre una copia exacta de Neon: sin conflictos de réplica.
+
+| Nodo | Cambios |
+| --- | --- |
+| Central | `02_hu02_permisos.sql`: permiso `INVENTARIO_GESTIONAR` para administradores. Con `SEED_DEMO`: 7 categorías, 12 medicamentos demo, 3 proveedores, tienda demo "Farmacia Norte" con stock consolidado y umbrales. 33 eventos nuevos en `replica_evento` |
+| Local | `02_hu02_movimiento_sentido.sql`: columna `sentido` (no hay movimientos previos que convertir). Réplica del catálogo y proveedores. Con `SEED_DEMO`: 9 lotes demo y un pedido `SOLICITADO` |
+
+Los eventos de `replica_evento` no se pueden borrar. Coordinar con quien trabaja HU-15 en la misma base antes del primer arranque.
+
+**Latencia medida hacia Neon** (sa-east-1): ~130 ms por consulta, ~0,8 s por conexión nueva. El pool conserva las conexiones 2 minutos con keepAlive (`db.mjs`) para no pagar la conexión en cada operación. Costo de cada operación (consultas × 130 ms):
+
+| Operación | Consultas | En Neon | RNF-05 |
+| --- | --- | --- | --- |
+| Buscar / consultar la red | 1 | ~0,15 s | < 2 s |
+| Registrar lote | 13 | ~1,7 s | ≤ 3 s |
+| Ajustar lote | 10 | ~1,3 s | ≤ 3 s |
+| Recibir pedido | 15 + 4 por línea adicional | ~2,6 s con 2 líneas | ≤ 3 s hasta 3 líneas |
+
+La recepción crece ~0,5 s por línea porque cada lote pasa por `registrarMovimiento` con su bloqueo (RNF-06). En una tienda con su base local en la red del local, cada consulta tarda menos de 1 ms.
+
+**Pruebas sobre Neon** (las bases son compartidas; los scripts exigen `PERMITIR_NEON=1`):
+
+| Prueba | En Neon | Deja en la base |
+| --- | --- | --- |
+| `test:sync` (API levantado) | Recomendada | Dos lotes `SYNC-…` de MED-002 y un ajuste |
+| `test:hu01` (API detenido) | Recomendada | Sesiones y `ACCESO_DENEGADO` de `cajero1`; el catálogo de rendimiento se revierte |
+| `test:hu02` (API detenido) | Con cuidado | Lotes `L-…`/`P-…` con unidades de ibuprofeno e insulina, recepción del pedido demo |
+| `test:hu06` | No | Publica eventos de prueba en `replica_evento` (tienda 99, snapshots) y cambia la política de acceso |
+
 ## Ciclo
 
 | Paso | Resultado |
