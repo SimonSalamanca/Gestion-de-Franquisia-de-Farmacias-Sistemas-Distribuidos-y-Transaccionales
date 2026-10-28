@@ -88,25 +88,37 @@ const lejos = await buscar({ categoria: analgesicos.id_categoria, pagina: 99 }, 
 check("página fuera de rango: vacía pero con el total", lejos.resultados.length === 0 && lejos.total === porCategoria.total);
 
 // --- Otra tienda y existencias en la red (criterio 2) ---
-const red = await central.query("select id_tienda from tienda where nombre = 'Farmacia Norte'");
-const idRed = red.rows[0]?.id_tienda;
-check("tienda demo de la red existe", idRed != null);
-const enRed = await buscar({ q: "acetaminofen", tienda: idRed }, ctx);
-const consolidado = await central.query(
-  "select cantidad_disponible from inventario_consolidado ic join medicamento m using (id_medicamento) where ic.id_tienda = $1 and m.codigo_interno = 'MED-001'",
-  [idRed],
-);
-const med001Red = enRed.resultados.find((r) => r.codigo_interno === "MED-001");
-check(
-  "filtro por otra tienda usa su consolidado y su hora",
-  enRed.tienda.propia === false && med001Red?.stock_tienda === Number(consolidado.rows[0]?.cantidad_disponible) && med001Red?.actualizado_en != null,
-);
+// Usa cualquier otra tienda activa del central que haya reportado stock; sin ninguna, esta parte se omite.
+const otra = (
+  await central.query(
+    `select ic.id_tienda, ic.id_medicamento, ic.cantidad_disponible, m.codigo_interno
+     from inventario_consolidado ic
+     join tienda t on t.id_tienda = ic.id_tienda and t.activa = true
+     join medicamento m on m.id_medicamento = ic.id_medicamento
+     where ic.id_tienda <> $1 and ic.cantidad_disponible > 0
+     order by ic.id_tienda, m.codigo_interno
+     limit 1`,
+    [idTienda],
+  )
+).rows[0];
+const idRed = otra?.id_tienda ?? null;
 check("tienda inexistente: 404", (await error(() => buscar({ q: "ac", tienda: 999999 }, ctx)))?.status === 404);
 const existencias = await existenciasEnRed(med001.id_medicamento, {}, ctx);
 check("la red excluye la tienda propia", existencias.tiendas.every((t) => t.id_tienda !== idTienda));
-check("la red trae Farmacia Norte con cantidad y hora", existencias.tiendas.some((t) => t.id_tienda === idRed && t.cantidad > 0 && t.actualizado_en));
 const ordenada = existencias.tiendas.every((t, i, l) => i === 0 || (l[i - 1].cantidad > 0) > (t.cantidad > 0) || l[i - 1].cantidad >= t.cantidad);
 check("la red va con stock primero y por cantidad", ordenada);
+if (otra) {
+  const enRed = await buscar({ q: otra.codigo_interno, tienda: idRed }, ctx);
+  const item = enRed.resultados.find((r) => r.id_medicamento === otra.id_medicamento);
+  check(
+    `filtro por la tienda ${idRed} usa su consolidado y su hora`,
+    enRed.tienda.propia === false && item?.stock_tienda === Number(otra.cantidad_disponible) && item?.actualizado_en != null,
+  );
+  const redOtra = await existenciasEnRed(otra.id_medicamento, {}, ctx);
+  check(`la red trae la tienda ${idRed} con cantidad y hora`, redOtra.tiendas.some((t) => t.id_tienda === idRed && t.cantidad > 0 && t.actualizado_en));
+} else {
+  console.log("OMITIDO filtro por otra tienda: ninguna otra tienda activa ha reportado stock al central");
+}
 
 // --- Seguridad (RNF-01) ---
 const denegadosAntes = await contar(local, "select count(*) as n from registro_actividad where accion = 'ACCESO_DENEGADO' and id_empleado = $1", [cajero.id_empleado]);
@@ -148,8 +160,10 @@ const localOffline = await buscar({ q: "acetaminofen" }, ctx);
 check("offline: la búsqueda local sigue", localOffline.total === acet.total);
 const redOffline = await error(() => existenciasEnRed(med001.id_medicamento, {}, ctx));
 check("offline: la red responde 503 SIN_CONEXION (no lista vacía)", redOffline?.status === 503 && redOffline?.codigo === "SIN_CONEXION");
-const otraOffline = await error(() => buscar({ q: "ac", tienda: idRed }, ctx));
-check("offline: filtro por otra tienda responde 503", otraOffline?.status === 503);
+if (idRed) {
+  const otraOffline = await error(() => buscar({ q: "ac", tienda: idRed }, ctx));
+  check("offline: filtro por otra tienda responde 503", otraOffline?.status === 503);
+}
 link.estado = estadoPrevio;
 
 // --- Central lento (RNF-05): la red se corta a los 1,5 s y la búsqueda local no espera ---
