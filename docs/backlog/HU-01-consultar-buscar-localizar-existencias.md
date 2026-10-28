@@ -287,7 +287,11 @@ Característica: HU-01 Consultar, buscar y localizar existencias entre tiendas
 
 - Central lento (respuestas retrasadas 2,5 s): la red responde 503 al vencer los 1,5 s y la búsqueda local no lo espera.
 
-Resultado (2026-10-28): `test:hu01`, `test:hu02` y `test:hu06` en verde sobre el nodo central y el nodo local de la tienda. La interfaz se verificó con un recorrido automatizado en Chrome (cajero y administrador, escritorio y móvil, sin errores de JavaScript).
+`npm run test:sync` (`scripts/probar-sincronizacion.mjs`): punta a punta entre el nodo local de la tienda y el nodo central, por el ciclo real de sincronización del API. Un lote o un ajuste en la tienda llega a `inventario_consolidado` en ≤ 15 s; sin conexión la tienda sigue operando, el central conserva el dato anterior y recibe lo pendiente al reconectar. Requiere el API local corriendo (`npm run api`) con `FARMAHUB_SIMULACION` activo.
+
+Orden de ejecución: `test:hu01`, `test:hu02` y `test:hu06` manipulan las bases directamente y deben correr **con el API detenido** (su ciclo de sincronización aplicaría eventos en medio de la prueba). `test:sync` corre **con el API levantado**.
+
+Resultado (2026-10-28): `test:hu01`, `test:hu02`, `test:hu06` y `test:sync` en verde sobre el nodo central y el nodo local de la tienda (sincronización medida: 8–10 s). La interfaz se verificó con un recorrido automatizado en Chrome (cajero y administrador, escritorio y móvil, sin errores de JavaScript).
 
 ## Ciclo
 

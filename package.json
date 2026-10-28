@@ -11,6 +11,7 @@
     "test:hu06": "node scripts/probar-hu06.mjs",
     "test:hu01": "node scripts/probar-hu01.mjs",
     "test:hu02": "node scripts/probar-hu02.mjs",
+    "test:sync": "node scripts/probar-sincronizacion.mjs",
     "web": "npm run dev --prefix apps/web"
   },
   "dependencies": {
