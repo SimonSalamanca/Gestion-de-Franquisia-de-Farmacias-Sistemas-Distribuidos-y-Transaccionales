@@ -30,21 +30,21 @@ export async function stockDe(client, idsMedicamento) {
 // Con cantidades absolutas un reintento o un duplicado nunca descuadran el consolidado del central.
 // Va con id_empleado NULL: el outbox ordena por empleado, y así un evento de login atascado de quien
 // hizo el movimiento no frena la publicación del stock (el responsable ya queda en movimiento_inventario).
+// Stock y hora (now() de la base, en UTC ISO) se calculan y encolan en una sola sentencia: con la base
+// remota (Neon) cada ida y vuelta cuesta ~130 ms, y esto corre dentro de cada movimiento.
 export async function encolarStockSnapshot(client, { idTienda, idsMedicamento }) {
   const ids = [...new Set(idsMedicamento.map(Number))];
   if (ids.length === 0) return null;
-  const items = await stockDe(client, ids);
-  const ahora = await client.query("select now() as ahora");
-  const payload = {
-    id_tienda: Number(idTienda),
-    calculado_en: new Date(ahora.rows[0].ahora).toISOString(),
-    items: items.map((item) => ({ id_medicamento: item.id_medicamento, cantidad: item.stock })),
-  };
   const key = crypto.randomUUID();
   await client.query(
     `insert into outbox_sync (id_empleado, idempotency_key, tipo_evento, payload)
-     values (null, $1, 'STOCK_SNAPSHOT', $2::jsonb)`,
-    [key, JSON.stringify(payload)],
+     select null, $1, 'STOCK_SNAPSHOT', jsonb_build_object(
+              'id_tienda', $2::int,
+              'calculado_en', to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+              'items', jsonb_agg(jsonb_build_object('id_medicamento', m.id_medicamento, 'cantidad', coalesce(s.stock, 0)) order by m.ord))
+     from unnest($3::int[]) with ordinality as m(id_medicamento, ord)
+     left join (${SQL_STOCK_VENDIBLE}) s on s.id_medicamento = m.id_medicamento`,
+    [key, Number(idTienda), ids],
   );
   return key;
 }

@@ -58,10 +58,13 @@ export async function registrarMovimiento(
     });
   }
   const estado = lote.estado === "BLOQUEADO" ? "BLOQUEADO" : nuevo === 0 ? "AGOTADO" : "DISPONIBLE";
-  await client.query("update lote set cantidad_disponible = $2, estado = $3 where id_lote = $1", [idLote, nuevo, estado]);
 
+  // Saldo del lote y movimiento en una sola sentencia (una ida y vuelta menos por movimiento).
   const movimiento = await client.query(
-    `insert into movimiento_inventario (
+    `with saldo as (
+       update lote set cantidad_disponible = $9, estado = $10 where id_lote = $1
+     )
+     insert into movimiento_inventario (
        id_lote, tipo_movimiento, sentido, cantidad, id_empleado, referencia_documento, id_traslado, observaciones
      ) values ($1, $2, $3, $4, $5, $6, $7, $8)
      returning id_movimiento, fecha_hora`,
@@ -74,6 +77,8 @@ export async function registrarMovimiento(
       referencia ? String(referencia).slice(0, 60) : null,
       idTraslado,
       observaciones ? String(observaciones).slice(0, 300) : null,
+      nuevo,
+      estado,
     ],
   );
 

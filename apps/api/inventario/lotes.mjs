@@ -24,7 +24,8 @@ export async function auditar(client, idEmpleado, accion, entidad, idEntidad, de
 }
 
 // Criterios 1 y 5: número de lote, caducidad y proveedor obligatorios, con el campo exacto en el error.
-async function validarDatosLote(client, datos, { conProveedor = true } = {}) {
+// Primero el formato (sin base); luego una sola consulta verifica todas las líneas contra la base.
+function validarFormatoLote(datos, { conProveedor = true } = {}) {
   const numeroLote = String(datos.numero_lote ?? "").trim();
   if (!numeroLote) throw obligatorio("numero_lote", "El número de lote es obligatorio");
   if (numeroLote.length > 60) throw invalido("El número de lote admite máximo 60 caracteres", { campo: "numero_lote" });
@@ -32,6 +33,11 @@ async function validarDatosLote(client, datos, { conProveedor = true } = {}) {
   const fecha = String(datos.fecha_caducidad ?? "").trim();
   if (!fecha) throw obligatorio("fecha_caducidad", "La fecha de caducidad es obligatoria");
   if (!FECHA_RE.test(fecha)) throw invalido("La fecha de caducidad debe tener el formato AAAA-MM-DD", { campo: "fecha_caducidad" });
+  // Fecha de calendario real (rechaza 2027-02-30, 2027-13-01, año 0000) sin consultar la base.
+  const calendario = new Date(`${fecha}T00:00:00Z`);
+  if (Number.isNaN(calendario.getTime()) || calendario.toISOString().slice(0, 10) !== fecha || calendario.getUTCFullYear() < 1) {
+    throw invalido("La fecha de caducidad no es una fecha válida", { campo: "fecha_caducidad" });
+  }
 
   let idProveedor = null;
   if (conProveedor) {
@@ -47,27 +53,38 @@ async function validarDatosLote(client, datos, { conProveedor = true } = {}) {
   const cantidad = entero(datos.cantidad);
   if (Number.isNaN(cantidad) || cantidad <= 0) throw invalido("La cantidad debe ser un entero mayor que cero", { campo: "cantidad" });
 
-  // La validez y la comparación con "hoy" las decide la base (current_date), no el reloj del API.
-  let futura;
-  try {
-    const result = await client.query("select $1::date > current_date as futura", [fecha]);
-    futura = result.rows[0].futura;
-  } catch {
-    throw invalido("La fecha de caducidad no es una fecha válida", { campo: "fecha_caducidad" });
-  }
-  if (!futura) throw invalido("La fecha de caducidad debe ser posterior a hoy", { campo: "fecha_caducidad" });
-
-  const medicamento = await client.query(
-    "select nombre_comercial from medicamento_ref where id_medicamento = $1 and activo = true",
-    [idMedicamento],
-  );
-  if (medicamento.rowCount === 0) throw invalido("El medicamento no existe o está inactivo", { campo: "id_medicamento" });
-  if (conProveedor) {
-    const proveedor = await client.query("select 1 from proveedor_ref where id_proveedor = $1 and activo = true", [idProveedor]);
-    if (proveedor.rowCount === 0) throw invalido("El proveedor no existe o está inactivo", { campo: "id_proveedor" });
-  }
-
   return { numeroLote, fecha, idProveedor, idMedicamento, cantidad };
+}
+
+// Verifica en la base, en una ida y vuelta, las líneas ya validadas en formato: caducidad posterior a
+// current_date (la decide la base, no el reloj del API), medicamento activo y proveedor activo.
+// alError(indice, error) permite al llamador anotar la línea. Lanza el primer error en orden de línea.
+async function verificarLotesEnBase(client, lineas, { alError = (indice, error) => error } = {}) {
+  let filas;
+  try {
+    const result = await client.query(
+      `select l.fecha::date > current_date as futura,
+              exists (select 1 from medicamento_ref m where m.id_medicamento = l.medicamento and m.activo = true) as medicamento,
+              l.proveedor is null
+                or exists (select 1 from proveedor_ref p where p.id_proveedor = l.proveedor and p.activo = true) as proveedor
+       from unnest($1::text[], $2::int[], $3::int[]) with ordinality as l(fecha, medicamento, proveedor, orden)
+       order by l.orden`,
+      [lineas.map((l) => l.fecha), lineas.map((l) => l.idMedicamento), lineas.map((l) => l.idProveedor)],
+    );
+    filas = result.rows;
+  } catch (error) {
+    // validarFormatoLote ya garantiza fechas de calendario válidas; si aun así la base rechaza una, se
+    // responde como dato inválido. Cualquier otro error (conexión, etc.) sigue su curso.
+    if (String(error.code || "").startsWith("22")) {
+      throw invalido("La fecha de caducidad no es una fecha válida", { campo: "fecha_caducidad" });
+    }
+    throw error;
+  }
+  for (const [indice, fila] of filas.entries()) {
+    if (!fila.futura) throw alError(indice, invalido("La fecha de caducidad debe ser posterior a hoy", { campo: "fecha_caducidad" }));
+    if (!fila.medicamento) throw alError(indice, invalido("El medicamento no existe o está inactivo", { campo: "id_medicamento" }));
+    if (!fila.proveedor) throw alError(indice, invalido("El proveedor no existe o está inactivo", { campo: "id_proveedor" }));
+  }
 }
 
 // Crea el lote o, si ya existe con la misma caducidad, le suma una entrada.
@@ -115,7 +132,8 @@ async function entradaEnLote(client, datos, ctx) {
 }
 
 export async function registrarLote(client, body, ctx) {
-  const datos = await validarDatosLote(client, body);
+  const datos = validarFormatoLote(body);
+  await verificarLotesEnBase(client, [datos]);
   const observaciones = body.observaciones ? String(body.observaciones).trim().slice(0, 300) : null;
   const resultado = await entradaEnLote(client, datos, { ...ctx, referencia: "REGISTRO_MANUAL", observaciones });
   await auditar(
@@ -147,15 +165,18 @@ export async function recibirPedido(client, idPedido, body, ctx) {
   );
   const pendiente = new Map(detalle.rows.map((row) => [row.id_medicamento, row.cantidad_solicitada - row.cantidad_recibida]));
 
-  // Validar todas las líneas antes de escribir nada.
+  // Validar todas las líneas antes de escribir nada: formato y pedido en el API, y una sola consulta a la base.
+  const conLinea = (indice, error) => {
+    if (error instanceof ErrorNegocio) error.extra = { ...error.extra, linea: indice + 1 };
+    return error;
+  };
   const validadas = [];
   for (const [indice, linea] of lineas.entries()) {
     let datos;
     try {
-      datos = await validarDatosLote(client, { ...linea, id_proveedor: idProveedor });
+      datos = validarFormatoLote({ ...linea, id_proveedor: idProveedor });
     } catch (error) {
-      if (error instanceof ErrorNegocio) error.extra = { ...error.extra, linea: indice + 1 };
-      throw error;
+      throw conLinea(indice, error);
     }
     if (!pendiente.has(datos.idMedicamento)) {
       throw invalido(`Línea ${indice + 1}: el medicamento no está en este pedido`, { linea: indice + 1 });
@@ -170,17 +191,23 @@ export async function recibirPedido(client, idPedido, body, ctx) {
     pendiente.set(datos.idMedicamento, resta);
     validadas.push(datos);
   }
+  await verificarLotesEnBase(client, validadas, { alError: conLinea });
 
   const referencia = `PEDIDO-${idPedido}`;
   const lotes = [];
   for (const datos of validadas) {
     const resultado = await entradaEnLote(client, datos, { ...ctx, referencia, publicarStock: false });
-    await client.query(
-      "update detalle_pedido set cantidad_recibida = cantidad_recibida + $3 where id_pedido = $1 and id_medicamento = $2",
-      [idPedido, datos.idMedicamento, datos.cantidad],
-    );
     lotes.push(resultado.id_lote);
   }
+  // Cantidades recibidas de todas las líneas en una sola sentencia (varias líneas pueden ser del mismo medicamento).
+  await client.query(
+    `update detalle_pedido d set cantidad_recibida = d.cantidad_recibida + r.cantidad
+     from (select id_medicamento, sum(cantidad)::int as cantidad
+           from unnest($2::int[], $3::int[]) as l(id_medicamento, cantidad)
+           group by id_medicamento) r
+     where d.id_pedido = $1 and d.id_medicamento = r.id_medicamento`,
+    [idPedido, validadas.map((datos) => datos.idMedicamento), validadas.map((datos) => datos.cantidad)],
+  );
   const completo = [...pendiente.values()].every((valor) => valor === 0);
   const nuevoEstado = completo ? "RECIBIDO_TOTAL" : "RECIBIDO_PARCIAL";
   await client.query("update pedido set estado = $2, fecha_recepcion = now() where id_pedido = $1", [idPedido, nuevoEstado]);
