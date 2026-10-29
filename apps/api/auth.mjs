@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { central, local, runtime, withTx } from "./db.mjs";
 import { payloadHmac, verifyPassword } from "./crypto.mjs";
 import { centralAlcanzable, estadoReal, link } from "./sync.mjs";
+import { ErrorNegocio } from "./errores.mjs";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -12,7 +13,8 @@ const ROLE_LABEL = {
 };
 
 export const MODULES = {
-  INVENTARIO_CONSULTAR: { titulo: "Inventario", ambito: "tienda", texto: "Consulta de existencias, lotes y caducidad de esta tienda." },
+  INVENTARIO_CONSULTAR: { titulo: "Inventario", ambito: "tienda", texto: "Búsqueda de medicamentos y existencias en esta tienda y en la red." },
+  INVENTARIO_GESTIONAR: { titulo: "Lotes y recepción", ambito: "tienda", texto: "Registro de lotes, recepción de pedidos y ajustes con historial." },
   VENTA_REGISTRAR: { titulo: "Ventas", ambito: "tienda", texto: "Registro de venta y facturación en el punto de venta." },
   FACTURA_ANULAR: { titulo: "Anulaciones", ambito: "tienda", texto: "Anulación o devolución con motivo obligatorio." },
   PRECIO_GESTIONAR: { titulo: "Precios", ambito: "tienda", texto: "Precio vigente e historial. No altera facturas ya emitidas." },
@@ -422,6 +424,22 @@ export async function abrirModulo(token, nodo, codigo) {
       rol: sesion.rol_etiqueta,
     },
   };
+}
+
+// Para rutas de negocio: relee sesión y permiso en cada request (RNF-01). Sin sesión, 401;
+// sin permiso, 403 y queda ACCESO_DENEGADO en la auditoría del nodo, antes de cualquier mutación.
+export async function autorizar(token, nodo, codigo) {
+  const sesion = await sesionDe(token, nodo);
+  if (!sesion) throw new ErrorNegocio(401, "SESION", "Sesión inválida o expirada");
+  if (!sesion.permisos.includes(codigo)) {
+    await NODE[nodo].pool.query(
+      `insert into ${NODE[nodo].actividad} (id_empleado, accion, entidad_afectada, detalle)
+       values ($1, 'ACCESO_DENEGADO', 'modulo', $2)`,
+      [sesion.id_empleado, codigo.slice(0, 400)],
+    );
+    throw new ErrorNegocio(403, "ACCESO_DENEGADO", "Su rol no tiene permiso para esta acción");
+  }
+  return sesion;
 }
 
 export async function cerrarSesion(token, nodo) {
