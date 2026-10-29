@@ -5,7 +5,13 @@
   "scripts": {
     "dev": "concurrently -n api,web -c blue,green \"node apps/api/server.mjs\" \"npm run dev --prefix apps/web\"",
     "api": "node apps/api/server.mjs",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:verificar": "node scripts/db-verificar.mjs",
+    "test": "node scripts/probar-hu06.mjs && node scripts/db-verificar.mjs",
     "test:hu06": "node scripts/probar-hu06.mjs",
+    "test:hu01": "node scripts/probar-hu01.mjs",
+    "test:hu02": "node scripts/probar-hu02.mjs",
+    "test:sync": "node scripts/probar-sincronizacion.mjs",
     "web": "npm run dev --prefix apps/web"
   },
   "dependencies": {
