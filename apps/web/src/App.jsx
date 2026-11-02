@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "./api.js";
 import Inventario from "./Inventario.jsx";
 import Lotes from "./Lotes.jsx";
+import Tiendas from "./Tiendas.jsx";
 
 const CUENTAS = [
   { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
@@ -23,8 +24,12 @@ const AMBITO = {
   REPORTE_CONSOLIDADO_VER: "red",
 };
 
-// HU-01 y HU-02: los módulos de inventario del POS tienen pantalla propia; el resto muestra la tarjeta del módulo.
-const PANTALLAS = { INVENTARIO_CONSULTAR: Inventario, INVENTARIO_GESTIONAR: Lotes };
+// Módulos con pantalla propia, por nodo; el resto muestra la tarjeta del módulo.
+// Local: HU-01 y HU-02 (inventario del POS). Central: HU-15 (tiendas de la red).
+const PANTALLAS = {
+  local: { INVENTARIO_CONSULTAR: Inventario, INVENTARIO_GESTIONAR: Lotes },
+  central: { TIENDA_GESTIONAR: Tiendas },
+};
 
 export default function App() {
   const [session, setSession] = useState(() => {
@@ -37,10 +42,22 @@ export default function App() {
   const [ultimaSync, setUltimaSync] = useState(null);
 
   useEffect(() => {
-    api("/api/modulos").then((result) => {
-      if (result.ok) setCatalogo(result.data);
-    });
+    // Con `npm run dev` la web suele estar lista antes que el API (migra y sincroniza al arrancar):
+    // si el catálogo falla, se reintenta en cada ciclo hasta obtenerlo. Sin él no se listan módulos.
+    let catalogoCargado = false;
+    function cargarCatalogo() {
+      if (catalogoCargado) return;
+      api("/api/modulos")
+        .then((result) => {
+          if (!result.ok) return;
+          catalogoCargado = true;
+          setCatalogo(result.data);
+        })
+        .catch(() => {});
+    }
+    cargarCatalogo();
     const timer = setInterval(() => {
+      cargarCatalogo();
       api("/api/conectividad").then((result) => {
         if (!result.ok) return;
         setEstado(result.data.estado_real || result.data.estado);
@@ -192,7 +209,7 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
   const [activo, setActivo] = useState(null);
   const [detalle, setDetalle] = useState(null);
   const [error, setError] = useState("");
-  const Pantalla = session.nodo === "local" ? PANTALLAS[detalle?.codigo] : null;
+  const Pantalla = PANTALLAS[session.nodo]?.[detalle?.codigo];
 
   async function abrir(codigo) {
     setActivo(codigo);
@@ -241,7 +258,8 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
               {modulo.titulo}
             </button>
           ))}
-          {visibles.length === 0 && <p>Este acceso no tiene módulos en este nodo.</p>}
+          {Object.keys(catalogo).length === 0 && <p className="muted">Cargando módulos…</p>}
+          {Object.keys(catalogo).length > 0 && visibles.length === 0 && <p>Este acceso no tiene módulos en este nodo.</p>}
         </nav>
         <section className="content">
           {!activo && (

@@ -10,8 +10,9 @@ apps/api/
   db.mjs                Pools central/local, withTx, lectura de timestamp como UTC
   migrate.mjs           Aplica db/<nodo>/*.sql y siembra los datos demo
   http.mjs              readBody, send (CORS), tokenDe y el router mínimo
-  server.mjs            Arranque, ciclo de sincronización y registro de rutas
-  routes/<dominio>.mjs  Rutas HTTP de cada dominio (sistema, auth, ...)
+  app.mjs               Registro de rutas y servidor HTTP (las pruebas HTTP lo levantan sin el ciclo de sync)
+  server.mjs            Arranque y ciclo de sincronización
+  routes/<dominio>.mjs  Rutas HTTP de cada dominio (sistema, auth, inventario, lotes, tiendas)
   auth.mjs              Lógica de HU-06 (login, sesión, permisos)
   sync.mjs              Estado del enlace, pull del log de réplica y envío del outbox
   sync/handlers/        Un archivo por dominio con los handlers de cada tipo de evento
@@ -74,7 +75,7 @@ Neon corre en GMT. La API lee las columnas `timestamp without time zone` como UT
 
 ## Rutas HTTP
 
-Cree `apps/api/routes/<dominio>.mjs` y regístrelo en `server.mjs` con `.usar(...)`:
+Cree `apps/api/routes/<dominio>.mjs` y regístrelo en `app.mjs` con `.usar(...)`. El router acepta `get`, `post`, `put` y `patch`:
 
 ```js
 import { readBody, send, tokenDe } from "../http.mjs";
