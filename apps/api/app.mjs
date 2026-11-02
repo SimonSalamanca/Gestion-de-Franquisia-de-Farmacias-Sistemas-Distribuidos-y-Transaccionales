@@ -1,0 +1,29 @@
+import http from "http";
+import { crearRouter, send } from "./http.mjs";
+import sistema from "./routes/sistema.mjs";
+import auth from "./routes/auth.mjs";
+import inventario from "./routes/inventario.mjs";
+import lotes from "./routes/lotes.mjs";
+import tiendas from "./routes/tiendas.mjs";
+import { ErrorNegocio } from "./errores.mjs";
+
+// Cada módulo de rutas registra las suyas. Para una HU nueva: routes/<dominio>.mjs y agregarlo aquí.
+// Separado de server.mjs para que las pruebas HTTP levanten el mismo servidor sin el ciclo de sync.
+const router = crearRouter().usar(sistema).usar(auth).usar(inventario).usar(lotes).usar(tiendas);
+
+export function crearServidor() {
+  return http.createServer(async (req, res) => {
+    if (req.method === "OPTIONS") return send(res, 204, null);
+    const url = new URL(req.url, "http://localhost");
+    try {
+      const ruta = router.buscar(req.method, url.pathname);
+      if (!ruta) return send(res, 404, { mensaje: "Ruta no encontrada" });
+      return await ruta.handler(req, res, { url, params: ruta.params });
+    } catch (error) {
+      if (error instanceof ErrorNegocio) return send(res, error.status, error.body);
+      const status = error.status || 500;
+      if (status === 500) console.error(error);
+      return send(res, status, { mensaje: status === 400 ? "JSON inválido" : "Error interno" });
+    }
+  });
+}

@@ -26,5 +26,8 @@ skills-lock.json
 AGENTS.md
 FARMAHUB_CONTEXT.md
 
+# Configuracion de agentes IA adicionales
+.claude/
+
 # Configuracion del editor (no esencial para la aplicacion)
 .vscode/

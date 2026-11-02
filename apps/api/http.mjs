@@ -39,7 +39,7 @@ export function send(res, status, body) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": origenPermitido(res.req),
     "Access-Control-Allow-Headers": "Content-Type, Authorization, Idempotency-Key",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, OPTIONS",
     Vary: "Origin",
     "Cache-Control": "no-store",
   });
@@ -58,6 +58,8 @@ export function crearRouter() {
   return {
     get: add("GET"),
     post: add("POST"),
+    put: add("PUT"),
+    patch: add("PATCH"),
     usar(registrar) {
       registrar(this);
       return this;

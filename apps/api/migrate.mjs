@@ -83,9 +83,13 @@ async function seedCentral() {
   );
   const idTienda = tienda.rows[0].id_tienda;
 
+  // Una sola consulta para saber cuáles faltan: tras el primer arranque no se crea ninguno.
+  const existentes = await central.query("select usuario from empleado where usuario = any($1::varchar[])", [
+    DEMO_USERS.map((user) => user.usuario),
+  ]);
+  const yaCreados = new Set(existentes.rows.map((row) => row.usuario));
   for (const user of DEMO_USERS) {
-    const exists = await central.query("select id_empleado from empleado where usuario = $1", [user.usuario]);
-    if (exists.rowCount > 0) continue;
+    if (yaCreados.has(user.usuario)) continue;
     const rol = await central.query("select id_rol from rol where nombre = $1", [user.rol]);
     if (rol.rowCount === 0) throw new Error(`Rol no encontrado: ${user.rol}`);
     await central.query(
@@ -197,14 +201,17 @@ const CATALOGO = [
 async function emitirCatalogoPendiente(client) {
   let emitidos = 0;
   for (const { tipo, tabla, id, columnas } of CATALOGO) {
-    const publicados = await client.query(
-      `select distinct (payload ->> '${id}')::integer as id from replica_evento where tipo_evento = $1`,
+    // Solo las filas sin evento, en una consulta: tras el primer arranque no devuelve ninguna.
+    const filas = await client.query(
+      `select ${columnas} from ${tabla} t
+       where not exists (
+         select 1 from replica_evento r
+         where r.tipo_evento = $1 and (r.payload ->> '${id}')::integer = t.${id}
+       )
+       order by ${id}`,
       [tipo],
     );
-    const ya = new Set(publicados.rows.map((row) => row.id));
-    const filas = await client.query(`select ${columnas} from ${tabla} order by ${id}`);
     for (const fila of filas.rows) {
-      if (ya.has(fila[id])) continue;
       await client.query("select append_replica_evento(null, $1, 1, $2::jsonb)", [tipo, JSON.stringify(fila)]);
       emitidos += 1;
     }
@@ -308,8 +315,8 @@ async function backfillTienda() {
 }
 
 export async function migrate({ log = () => {} } = {}) {
-  const enCentral = await aplicarScripts("central");
-  const enLocal = await aplicarScripts("local");
+  // Son bases distintas y cada una tiene su propio candado: se migran a la vez.
+  const [enCentral, enLocal] = await Promise.all([aplicarScripts("central"), aplicarScripts("local")]);
   log(`scripts central: ${enCentral.join(", ") || "-"} | local: ${enLocal.join(", ") || "-"}`);
   await asegurarUsuarioUnico();
   await backfillTienda();
@@ -325,14 +332,12 @@ export async function migrate({ log = () => {} } = {}) {
   if (!existe) console.warn(`LOCAL_TIENDA_ID=${idTienda} no existe en el nodo central.`);
   runtime.tiendaId = idTienda;
   await localCursor(idTienda);
+  // El catálogo demo se siembra antes de la emisión para publicar todo en una sola pasada. El orden del log
+  // no cambia: tienda, roles y permisos (solo con el log vacío), empleados, y luego categorías, proveedores y
+  // medicamentos. Los umbrales demo van después porque el nodo local los aplica en orden y dependen del medicamento.
+  if (existe && config.seedDemo) await seedCatalogoDemo();
   if (existe) await emitCatalog(idTienda);
-  if (existe && config.seedDemo) {
-    // Después del catálogo inicial (que exige el log vacío). La segunda emisión publica solo el catálogo
-    // nuevo, y va antes de los umbrales porque el nodo local los aplica en orden y dependen del medicamento.
-    await seedCatalogoDemo();
-    await emitCatalog(idTienda);
-    await seedRedDemo(idTienda);
-  }
+  if (existe && config.seedDemo) await seedRedDemo(idTienda);
   return idTienda;
 }
 

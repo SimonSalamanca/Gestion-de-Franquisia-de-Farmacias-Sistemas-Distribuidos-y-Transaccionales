@@ -74,33 +74,47 @@ async function idsPorCodigo(client, tabla) {
   return new Map(result.rows.map((row) => [row.codigo_interno, row.id_medicamento]));
 }
 
+// Cada tabla demo se siembra con un solo insert (jsonb_to_recordset): corre en cada arranque y cada
+// ida y vuelta a Neon cuesta ~0,2 s. `orden` conserva el orden de la lista en los ids generados.
+const filas = (lista, aObjeto) => JSON.stringify(lista.map((item, orden) => ({ orden, ...aObjeto(item) })));
+
 // Nodo central, paso 1: catálogo y proveedores. migrate publica después los MEDICAMENTO_UPSERT, antes de
 // que el paso 2 publique umbrales que dependen de ellos (el nodo local los aplica en ese orden).
 export async function seedCatalogoDemo() {
   await withTx(central, async (client) => {
-    for (const nombre of CATEGORIAS) {
-      await client.query(
-        "insert into categoria (nombre) values ($1) on conflict (nombre) do nothing",
-        [nombre],
-      );
-    }
-    const categorias = new Map(
-      (await client.query("select id_categoria, nombre from categoria")).rows.map((row) => [row.nombre, row.id_categoria]),
+    await client.query(
+      `insert into categoria (nombre)
+       select c.nombre from jsonb_to_recordset($1::jsonb) as c(orden int, nombre varchar) order by c.orden
+       on conflict (nombre) do nothing`,
+      [filas(CATEGORIAS, (nombre) => ({ nombre }))],
     );
-    for (const [codigo, nombre, principio, categoria, receta, refrigeracion] of MEDICAMENTOS) {
-      await client.query(
-        `insert into medicamento (codigo_interno, nombre_comercial, principio_activo, id_categoria, requiere_receta, requiere_refrigeracion)
-         values ($1, $2, $3, $4, $5, $6)
-         on conflict (codigo_interno) do nothing`,
-        [codigo, nombre, principio, categorias.get(categoria), receta, refrigeracion],
-      );
-    }
-    for (const [nombre, nit, telefono] of PROVEEDORES) {
-      await client.query(
-        "insert into proveedor (nombre_empresa, nit, telefono) values ($1, $2, $3) on conflict (nit) do nothing",
-        [nombre, nit, telefono],
-      );
-    }
+    await client.query(
+      `insert into medicamento (codigo_interno, nombre_comercial, principio_activo, id_categoria, requiere_receta, requiere_refrigeracion)
+       select m.codigo, m.nombre, m.principio, c.id_categoria, m.receta, m.refrigeracion
+       from jsonb_to_recordset($1::jsonb)
+         as m(orden int, codigo varchar, nombre varchar, principio varchar, categoria varchar, receta boolean, refrigeracion boolean)
+       left join categoria c on c.nombre = m.categoria
+       order by m.orden
+       on conflict (codigo_interno) do nothing`,
+      [
+        filas(MEDICAMENTOS, ([codigo, nombre, principio, categoria, receta, refrigeracion]) => ({
+          codigo,
+          nombre,
+          principio,
+          categoria,
+          receta,
+          refrigeracion,
+        })),
+      ],
+    );
+    await client.query(
+      `insert into proveedor (nombre_empresa, nit, telefono)
+       select p.nombre, p.nit, p.telefono
+       from jsonb_to_recordset($1::jsonb) as p(orden int, nombre varchar, nit varchar, telefono varchar)
+       order by p.orden
+       on conflict (nit) do nothing`,
+      [filas(PROVEEDORES, ([nombre, nit, telefono]) => ({ nombre, nit, telefono }))],
+    );
   });
 }
 
@@ -118,37 +132,37 @@ export async function seedRedDemo(idTienda) {
       await client.query("select append_replica_evento(null, 'TIENDA_UPSERT', 1, $1::jsonb)", [JSON.stringify(red.rows[0])]);
     }
     const idRed = (await client.query("select id_tienda from tienda where nombre = $1", [TIENDA_RED.nombre])).rows[0].id_tienda;
-    const medicamentos = await idsPorCodigo(client, "medicamento");
 
     const umbrales = [
       ...UMBRALES_PROPIA.map((umbral) => [idTienda, ...umbral]),
       ...UMBRALES_RED.map((umbral) => [idRed, ...umbral]),
     ];
-    for (const [tienda, codigo, minimo, dias] of umbrales) {
-      const idMedicamento = medicamentos.get(codigo);
-      const nuevo = await client.query(
-        `insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
-         values ($1, $2, $3, $4) on conflict do nothing`,
-        [tienda, idMedicamento, minimo, dias],
-      );
-      // Mismo evento que publica HU-15 al configurar un umbral.
-      if (nuevo.rowCount > 0) {
-        await client.query("select append_replica_evento($1, 'UMBRAL_UPSERT', 1, $2::jsonb)", [
-          tienda,
-          JSON.stringify({ id_tienda: tienda, id_medicamento: idMedicamento, stock_minimo: minimo, dias_alerta_caducidad: dias }),
-        ]);
-      }
+    const nuevos = await client.query(
+      `insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
+       select u.tienda, m.id_medicamento, u.minimo, u.dias
+       from jsonb_to_recordset($1::jsonb) as u(orden int, tienda int, codigo varchar, minimo int, dias int)
+       join medicamento m on m.codigo_interno = u.codigo
+       order by u.orden
+       on conflict do nothing
+       returning id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad`,
+      [filas(umbrales, ([tienda, codigo, minimo, dias]) => ({ tienda, codigo, minimo, dias }))],
+    );
+    // Mismo evento que publica HU-15 al configurar un umbral. Solo para los recién creados: tras el primer
+    // arranque no queda ninguno y este bucle no hace consultas.
+    for (const umbral of nuevos.rows) {
+      await client.query("select append_replica_evento($1, 'UMBRAL_UPSERT', 1, $2::jsonb)", [umbral.id_tienda, JSON.stringify(umbral)]);
     }
 
     // La tienda de la red no tiene nodo propio en la demo: su stock consolidado se siembra directo.
-    for (const [codigo, cantidad] of STOCK_RED) {
-      await client.query(
-        `insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
-         values ($1, $2, $3, now() at time zone 'UTC')
-         on conflict (id_tienda, id_medicamento) do nothing`,
-        [idRed, medicamentos.get(codigo), cantidad],
-      );
-    }
+    await client.query(
+      `insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
+       select $1, m.id_medicamento, s.cantidad, now() at time zone 'UTC'
+       from jsonb_to_recordset($2::jsonb) as s(orden int, codigo varchar, cantidad int)
+       join medicamento m on m.codigo_interno = s.codigo
+       order by s.orden
+       on conflict (id_tienda, id_medicamento) do nothing`,
+      [idRed, filas(STOCK_RED, ([codigo, cantidad]) => ({ codigo, cantidad }))],
+    );
   });
 }
 
