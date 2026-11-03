@@ -108,21 +108,23 @@ check("503 trae ultima sync", Object.prototype.hasOwnProperty.call(caido.body, "
 link.estado = "online";
 
 const hash = hashPassword("Farma123");
+// Usuario único por corrida: la cuenta de prueba se desactiva al final, no se borra (HU-07: su auditoría es permanente).
+const USUARIO_LOCK = `hu06.lock.${Date.now().toString(36)}`;
 const creado = await central.query(
   `insert into empleado (id_tienda, id_rol, nombre_completo, usuario, contrasena_hash, correo, activo, version_credencial)
-   values (1, 1, 'Lock Test', 'hu06.lock', $1, 'lock@farmahub.local', true, 1)
+   values (1, 1, 'Lock Test', $2, $1, null, true, 1)
    returning id_empleado`,
-  [hash],
+  [hash, USUARIO_LOCK],
 );
 const id = creado.rows[0].id_empleado;
 await local.query(
   `insert into empleado_ref (id_empleado, id_rol, id_tienda, nombre_completo, usuario, activo, contrasena_hash, version_credencial)
-   values ($1, 1, 1, 'Lock Test', 'hu06.lock', true, $2, 1)`,
-  [id, hash],
+   values ($1, 1, 1, 'Lock Test', $3, true, $2, 1)`,
+  [id, hash, USUARIO_LOCK],
 );
 const antes = await local.query("select epoch, intentos_en_epoch from control_acceso where id_empleado = $1", [id]);
 for (let i = 0; i < 5; i += 1) {
-  await login({ nodo: "local", usuario: "hu06.lock", password: "mala", idempotencyKey: crypto.randomUUID() });
+  await login({ nodo: "local", usuario: USUARIO_LOCK, password: "mala", idempotencyKey: crypto.randomUUID() });
 }
 const despues = await local.query(
   `select c.epoch, c.intentos_en_epoch, c.estado, c.provisional,
@@ -287,9 +289,9 @@ try {
     "update control_acceso set epoch = 1, intentos_en_epoch = 0, estado = 'ACTIVO', bloqueado_hasta = null, provisional = false where id_empleado = $1",
     [id],
   );
-  await login({ nodo: "local", usuario: "hu06.lock", password: "mala", idempotencyKey: crypto.randomUUID() });
+  await login({ nodo: "local", usuario: USUARIO_LOCK, password: "mala", idempotencyKey: crypto.randomUUID() });
   const localUno = await local.query("select estado from control_acceso where id_empleado = $1", [id]);
-  await login({ nodo: "local", usuario: "hu06.lock", password: "mala", idempotencyKey: crypto.randomUUID() });
+  await login({ nodo: "local", usuario: USUARIO_LOCK, password: "mala", idempotencyKey: crypto.randomUUID() });
   const localDos = await local.query(
     `select estado, provisional,
             bloqueado_hasta <= now() + make_interval(mins => 9) as tope,
@@ -313,13 +315,11 @@ await pullReplica(1);
 await local.query("delete from sesion_activa where id_empleado = $1", [id]);
 await local.query("delete from control_acceso where id_empleado = $1", [id]);
 await local.query("delete from outbox_sync where id_empleado = $1", [id]);
-await local.query("delete from registro_actividad where id_empleado = $1", [id]);
-await local.query("delete from empleado_ref where id_empleado = $1", [id]);
+await local.query("update empleado_ref set activo = false, fecha_baja = now(), contrasena_hash = null where id_empleado = $1", [id]);
 await central.query("delete from sesion_activa where id_empleado = $1", [id]);
 await central.query("delete from bloqueo_canonico where id_empleado = $1", [id]);
 await central.query("delete from control_acceso where id_empleado = $1", [id]);
-await central.query("delete from registro_actividad_central where id_empleado = $1", [id]);
-await central.query("delete from empleado where id_empleado = $1", [id]);
+await central.query("update empleado set activo = false, fecha_baja = now() where id_empleado = $1", [id]);
 
 console.log(fallos.length ? `FALLOS ${fallos.length}` : "TODO OK");
 await central.end();
