@@ -3,6 +3,8 @@ import { api } from "./api.js";
 import Inventario from "./Inventario.jsx";
 import Lotes from "./Lotes.jsx";
 import Tiendas from "./Tiendas.jsx";
+import Empleados from "./Empleados.jsx";
+import Auditoria from "./Auditoria.jsx";
 
 const CUENTAS = [
   { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
@@ -16,19 +18,21 @@ const AMBITO = {
   VENTA_REGISTRAR: "tienda",
   FACTURA_ANULAR: "tienda",
   PRECIO_GESTIONAR: "tienda",
-  EMPLEADO_GESTIONAR: "tienda",
   CAJA_CERRAR: "tienda",
   RED_VISIBILIDAD: "red",
   RED_CONTROL: "red",
   TIENDA_GESTIONAR: "red",
   REPORTE_CONSOLIDADO_VER: "red",
+  // HU-07: en el POS (su tienda) y en la consola (toda la red).
+  EMPLEADO_GESTIONAR: "ambos",
+  AUDITORIA_CONSULTAR: "ambos",
 };
 
 // Módulos con pantalla propia, por nodo; el resto muestra la tarjeta del módulo.
-// Local: HU-01 y HU-02 (inventario del POS). Central: HU-15 (tiendas de la red).
+// Local: HU-01 y HU-02 (inventario del POS). Central: HU-15 (tiendas de la red). Ambos: HU-07.
 const PANTALLAS = {
-  local: { INVENTARIO_CONSULTAR: Inventario, INVENTARIO_GESTIONAR: Lotes },
-  central: { TIENDA_GESTIONAR: Tiendas },
+  local: { INVENTARIO_CONSULTAR: Inventario, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria },
+  central: { TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria },
 };
 
 export default function App() {
@@ -113,6 +117,8 @@ function Login({ estado, forzado, ultimaSync, onEstado, onForzado, onEnter }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState(() => crypto.randomUUID());
+  const [restablecer, setRestablecer] = useState(false);
+  const [aviso, setAviso] = useState("");
 
   async function simular(body) {
     const result = await api("/api/conectividad/simular", { method: "POST", body });
@@ -120,6 +126,34 @@ function Login({ estado, forzado, ultimaSync, onEstado, onForzado, onEnter }) {
       onEstado(result.data.estado_real || result.data.estado);
       onForzado(result.data.forzado);
     }
+  }
+
+  if (restablecer) {
+    return (
+      <main className="login-shell">
+        <section className="brand">
+          <div>
+            <h1>FarmaHub</h1>
+            <p>Para elegir o recuperar su contraseña necesita el código de un solo uso que le entrega su administrador.</p>
+          </div>
+        </section>
+        <section className="panel">
+          <Restablecer
+            nodo={nodo}
+            usuarioInicial={usuario}
+            onVolver={(listo, usuarioNuevo) => {
+              setRestablecer(false);
+              if (listo) {
+                setUsuario(usuarioNuevo);
+                setPassword("");
+                setError("");
+                setAviso(listo);
+              }
+            }}
+          />
+        </section>
+      </main>
+    );
   }
 
   async function submit(event) {
@@ -170,6 +204,10 @@ function Login({ estado, forzado, ultimaSync, onEstado, onForzado, onEnter }) {
           <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
           <button className="primary full" disabled={busy}>{busy ? "Entrando..." : "Entrar"}</button>
           {error && <div className="error">{error}</div>}
+          {aviso && <div className="ok">{aviso}</div>}
+          <button type="button" className="enlace" style={{ marginTop: 12 }} onClick={() => setRestablecer(true)}>
+            ¿Tiene un código? Restablecer contraseña
+          </button>
           <div className="accounts">
             {CUENTAS.map((cuenta) => (
               <button
@@ -203,7 +241,7 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
   const visibles = useMemo(() => {
     return session.permisos
       .filter((codigo) => catalogo[codigo])
-      .filter((codigo) => (session.nodo === "central" ? AMBITO[codigo] === "red" : AMBITO[codigo] === "tienda"))
+      .filter((codigo) => AMBITO[codigo] === "ambos" || AMBITO[codigo] === (session.nodo === "central" ? "red" : "tienda"))
       .map((codigo) => ({ codigo, ...catalogo[codigo] }));
   }, [session, catalogo]);
   const [activo, setActivo] = useState(null);
@@ -285,5 +323,66 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
         </section>
       </div>
     </div>
+  );
+}
+
+// HU-07: canje del código de un solo uso. Va al central (por el nodo elegido): sin conexión responde 503.
+// La clave de idempotencia se conserva hasta tener respuesta, para que un reintento no gaste un intento más.
+function Restablecer({ nodo, usuarioInicial, onVolver }) {
+  const [usuario, setUsuario] = useState(usuarioInicial || "");
+  const [codigo, setCodigo] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmar, setConfirmar] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [key, setKey] = useState(() => crypto.randomUUID());
+
+  async function enviar(event) {
+    event.preventDefault();
+    setError("");
+    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      return setError("La contraseña debe tener al menos 8 caracteres y combinar letras y números");
+    }
+    if (password !== confirmar) return setError("Las contraseñas no coinciden");
+    setBusy(true);
+    try {
+      const result = await api(`/api/${nodo}/auth/restablecer`, {
+        method: "POST",
+        body: { usuario: usuario.trim().toLowerCase(), codigo, password },
+        key,
+      });
+      setKey(crypto.randomUUID());
+      if (!result.ok) {
+        setError(
+          result.status === 503
+            ? "Sin conexión con el nodo central. El restablecimiento necesita conexión; intente más tarde."
+            : result.data.mensaje || "No se pudo restablecer la contraseña",
+        );
+        return;
+      }
+      onVolver("Contraseña actualizada. Ya puede entrar con ella (en su tienda, tras la próxima sincronización: unos segundos).", usuario.trim().toLowerCase());
+    } catch {
+      setError("No hay respuesta del servidor. Puede reintentar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="card" onSubmit={enviar}>
+      <h2>Restablecer contraseña</h2>
+      <p className="muted">El código sirve una sola vez y vence. Si lo pierde o se equivoca 5 veces, pida otro a su administrador.</p>
+      <label>Usuario</label>
+      <input value={usuario} onChange={(event) => setUsuario(event.target.value)} autoComplete="username" />
+      <label>Código</label>
+      <input value={codigo} onChange={(event) => setCodigo(event.target.value)} placeholder="XXXX-XXXX" autoComplete="one-time-code" />
+      <label>Contraseña nueva</label>
+      <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
+      <label>Repetir contraseña</label>
+      <input type="password" value={confirmar} onChange={(event) => setConfirmar(event.target.value)} autoComplete="new-password" />
+      <button className="primary full" disabled={busy}>{busy ? "Guardando..." : "Guardar contraseña"}</button>
+      {error && <div className="error">{error}</div>}
+      <button type="button" className="enlace" style={{ marginTop: 12 }} onClick={() => onVolver(null)}>Volver a iniciar sesión</button>
+    </form>
   );
 }

@@ -5,6 +5,7 @@ import { config, avisos } from "./config.mjs";
 import { migrate } from "./migrate.mjs";
 import { pullReplica, flushOutbox, probeCentral, estadoReal } from "./sync.mjs";
 import { crearServidor } from "./app.mjs";
+import { subirAuditoria } from "./auditoria.mjs";
 
 // Las rutas se registran en app.mjs.
 const server = crearServidor();
@@ -25,6 +26,8 @@ async function ciclo() {
   if (estadoReal() === "offline") return;
   await flushOutbox();
   await pullReplica();
+  // HU-07: la auditoría sube aparte; si falla, se reintenta en el próximo ciclo sin frenar la réplica.
+  await subirAuditoria(runtime.tiendaId).catch((error) => console.error("auditoría", error.message));
 }
 
 for (const aviso of avisos) console.warn(`aviso: ${aviso}`);
