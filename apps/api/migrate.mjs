@@ -287,8 +287,14 @@ async function asegurarUsuarioUnico() {
       );
       await local.query("delete from sesion_activa where id_empleado = $1", [row.id_empleado]);
       await local.query("delete from control_acceso where id_empleado = $1", [row.id_empleado]);
-      await local.query("delete from registro_actividad where id_empleado = $1", [row.id_empleado]);
-      await local.query("delete from empleado_ref where id_empleado = $1", [row.id_empleado]);
+      // HU-07: la auditoría no se borra, y referencia a empleado_ref. La fila duplicada se conserva
+      // desactivada, sin hash y con un usuario único, para que su historia siga siendo consultable.
+      await local.query(
+        `update empleado_ref
+         set usuario = left(usuario, 40) || '#cuarentena#' || id_empleado, activo = false, contrasena_hash = null
+         where id_empleado = $1`,
+        [row.id_empleado],
+      );
     }
   }
   const still = await local.query("select usuario from empleado_ref group by usuario having count(*) > 1");

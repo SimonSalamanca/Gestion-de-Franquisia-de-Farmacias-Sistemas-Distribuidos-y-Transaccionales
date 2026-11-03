@@ -69,6 +69,13 @@ Las tablas transaccionales del nodo local (`factura`, `lote`, `movimiento_invent
 
 **Todo lo que suba al central se identifica por `(id_tienda, id_local)`**, nunca por el ID local solo. Incluya `id_tienda` en el payload y en la clave de cualquier tabla del central que guarde datos de tiendas. Los datos maestros (`tienda`, `empleado`, `medicamento`, ...) solo se crean en el central, así que su ID es global.
 
+## Auditoría
+
+Desde HU-07, `registro_actividad` (local), `registro_actividad_central` y `auditoria_tienda` son de solo inserción: un trigger rechaza `UPDATE`, `TRUNCATE` y el `DELETE` de filas con menos de 2 años. Para una historia nueva:
+
+- Registre sus acciones críticas con un `insert` en `registro_actividad` (o `registro_actividad_central` si la operación es del central), en la misma transacción que la operación. La consulta de HU-07 y la subida al central las toman sin cambios.
+- No borre empleados ni filas de auditoría, tampoco en las pruebas: desactive la cuenta (`activo = false`, `fecha_baja`) y use usuarios únicos por corrida.
+
 ## Fechas
 
 Neon corre en GMT. La API lee las columnas `timestamp without time zone` como UTC y envía las fechas en UTC (`db.mjs`). Use `now()` de la base para plazos (bloqueos, vencimientos), no la hora del servidor de la API. Muestre la hora local solo en el frontend.
