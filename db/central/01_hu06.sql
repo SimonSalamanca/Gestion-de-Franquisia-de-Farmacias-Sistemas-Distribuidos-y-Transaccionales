@@ -80,11 +80,8 @@ CREATE TABLE IF NOT EXISTS replica_evento (
     creado_en timestamp with time zone NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS replica_cursor (
-    id_tienda integer PRIMARY KEY,
-    ultimo_evento_visto bigint NOT NULL DEFAULT 0,
-    ultimo_ack_en timestamp with time zone
-);
+-- replica_cursor vive solo en el nodo local (cada tienda guarda hasta dónde leyó el log). Aquí se creaba
+-- una copia que nadie usa: se dejó de crear y 06_limpieza_tablas.sql la elimina donde ya exista.
 
 CREATE TABLE IF NOT EXISTS inbox_sync (
     id_tienda_origen integer NOT NULL,
