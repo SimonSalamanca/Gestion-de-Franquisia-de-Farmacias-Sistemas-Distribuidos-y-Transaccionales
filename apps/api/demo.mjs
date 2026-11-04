@@ -1,5 +1,7 @@
 import { central, local, withTx } from "./db.mjs";
 import { registrarLote } from "./inventario/lotes.mjs";
+import { config } from "./config.mjs";
+import { completarUmbrales, publicarUmbralesPendientes } from "./umbrales.mjs";
 
 // Datos de demostración del sprint 1 (SEED_DEMO). Son datos, no estructura, y todo es idempotente.
 // En el sprint 1 no hay historias de alta de catálogo, pedidos ni ventas: esto permite demostrar HU-01 y HU-02.
@@ -145,6 +147,8 @@ export async function seedCatalogoDemo() {
        returning id_medicamento`,
       [filas(PRECIOS, ([codigo, precio, dias]) => ({ codigo, precio, dias }))],
     );
+    // HU-04: todo medicamento activo necesita umbral en cada tienda activa (restricción diferida del central).
+    await completarUmbrales(client, { especificos: await umbralesDemo(client) });
     if (nuevos.rowCount > 0) {
       await client.query(
         `update precio_medicamento p set fecha_fin_vigencia = s.siguiente
@@ -157,6 +161,15 @@ export async function seedCatalogoDemo() {
       );
     }
   });
+}
+
+// Umbrales demo con valores propios (el resto de medicamentos usa el defecto): [{ tienda, codigo, minimo, dias }].
+async function umbralesDemo(client) {
+  const red = await client.query("select id_tienda from tienda where nombre = $1", [TIENDA_RED.nombre]);
+  return [
+    ...UMBRALES_PROPIA.map(([codigo, minimo, dias]) => ({ tienda: config.tiendaId, codigo, minimo, dias })),
+    ...(red.rowCount > 0 ? UMBRALES_RED.map(([codigo, minimo, dias]) => ({ tienda: red.rows[0].id_tienda, codigo, minimo, dias })) : []),
+  ];
 }
 
 // Nodo central, paso 2: una segunda tienda con stock consolidado y umbrales de ambas tiendas.
@@ -225,25 +238,10 @@ export async function seedRedDemo(idTienda) {
     }
     const idRed = (await client.query("select id_tienda from tienda where nombre = $1", [TIENDA_RED.nombre])).rows[0].id_tienda;
 
-    const umbrales = [
-      ...UMBRALES_PROPIA.map((umbral) => [idTienda, ...umbral]),
-      ...UMBRALES_RED.map((umbral) => [idRed, ...umbral]),
-    ];
-    const nuevos = await client.query(
-      `insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
-       select u.tienda, m.id_medicamento, u.minimo, u.dias
-       from jsonb_to_recordset($1::jsonb) as u(orden int, tienda int, codigo varchar, minimo int, dias int)
-       join medicamento m on m.codigo_interno = u.codigo
-       order by u.orden
-       on conflict do nothing
-       returning id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad`,
-      [filas(umbrales, ([tienda, codigo, minimo, dias]) => ({ tienda, codigo, minimo, dias }))],
-    );
-    // Mismo evento que publica HU-15 al configurar un umbral. Solo para los recién creados: tras el primer
-    // arranque no queda ninguno y este bucle no hace consultas.
-    for (const umbral of nuevos.rows) {
-      await client.query("select append_replica_evento($1, 'UMBRAL_UPSERT', 1, $2::jsonb)", [umbral.id_tienda, JSON.stringify(umbral)]);
-    }
+    // HU-04: la tienda nueva (y cualquier medicamento sin umbral) recibe el suyo en esta misma transacción, y se publica a las
+    // tiendas: el catálogo ya está publicado, así que el orden de la réplica es correcto.
+    await completarUmbrales(client, { especificos: await umbralesDemo(client) });
+    await publicarUmbralesPendientes(client);
 
     // La tienda de la red no tiene nodo propio en la demo: su stock consolidado se siembra directo.
     await client.query(

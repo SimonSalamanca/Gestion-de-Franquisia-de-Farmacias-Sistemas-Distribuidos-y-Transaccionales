@@ -1,4 +1,5 @@
 import fs from "fs";
+import { publicarUmbralesPendientes } from "./umbrales.mjs";
 import path from "path";
 import { central, local, runtime } from "./db.mjs";
 import { config, ROOT } from "./config.mjs";
@@ -239,6 +240,7 @@ async function emitCatalog(idTienda) {
     await emitirCatalogoGlobal(client, idTienda);
     await emitirEmpleadosPendientes(client, idTienda);
     await emitirCatalogoPendiente(client);
+    await publicarUmbralesPendientes(client);
     await client.query("commit");
   } catch (error) {
     await client.query("rollback");

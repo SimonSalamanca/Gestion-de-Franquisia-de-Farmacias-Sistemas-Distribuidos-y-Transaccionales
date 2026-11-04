@@ -7,6 +7,7 @@ import Empleados from "./Empleados.jsx";
 import Auditoria from "./Auditoria.jsx";
 import Precios from "./Precios.jsx";
 import Caja from "./Caja.jsx";
+import InventarioAlertas from "./InventarioAlertas.jsx";
 import RecetasEmitidas from "./RecetasEmitidas.jsx";
 
 const CUENTAS = [
@@ -35,7 +36,7 @@ const AMBITO = {
 // Módulos con pantalla propia, por nodo; el resto muestra la tarjeta del módulo.
 // Local: HU-01 y HU-02 (inventario del POS), HU-08 y HU-12 (caja y recetas). Central: HU-15 (tiendas de la red). Ambos: HU-07 y HU-03.
 const PANTALLAS = {
-  local: { INVENTARIO_CONSULTAR: Inventario, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, VENTA_REGISTRAR: Caja },
+  local: { INVENTARIO_CONSULTAR: InventarioAlertas, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, VENTA_REGISTRAR: Caja },
   central: { RED_CONTROL: RecetasEmitidas, TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios },
 };
 
@@ -251,6 +252,21 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
   const [activo, setActivo] = useState(null);
   const [detalle, setDetalle] = useState(null);
   const [error, setError] = useState("");
+  // HU-04: indicador de alertas. En el POS (nodo local) se consulta cada 30 s; no depende del central.
+  const [alertas, setAlertas] = useState(null);
+  const [pedido, setPedido] = useState(null);
+  const verAlertas = session.nodo === "local" && session.permisos.includes("INVENTARIO_CONSULTAR");
+  useEffect(() => {
+    if (!verAlertas) return undefined;
+    let vivo = true;
+    const consultar = () => api("/api/local/alertas/resumen", { token: session.token }).then((r) => vivo && r.ok && setAlertas(r.data));
+    consultar();
+    const timer = setInterval(consultar, 30000);
+    return () => {
+      vivo = false;
+      clearInterval(timer);
+    };
+  }, [verAlertas, session.token]);
   const Pantalla = PANTALLAS[session.nodo]?.[detalle?.codigo];
 
   async function abrir(codigo) {
@@ -283,6 +299,18 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
           <span className="muted">{session.tienda}</span>
         </div>
         <div className="row">
+          {alertas && alertas.total > 0 && (
+            <button
+              className={alertas.urgentes_sin_ver > 0 ? "danger" : "ghost"}
+              onClick={() => {
+                setPedido({ pestana: "alertas", n: Date.now() });
+                abrir("INVENTARIO_CONSULTAR");
+              }}
+              aria-label="Ver alertas de stock y caducidad"
+            >
+              ⚠ {alertas.urgentes_sin_ver > 0 ? `${alertas.urgentes_sin_ver} urgente${alertas.urgentes_sin_ver === 1 ? "" : "s"}` : `${alertas.total} alerta${alertas.total === 1 ? "" : "s"}`}
+            </button>
+          )}
           <span className={`pill ${estado}`}>{estado}</span>
           {forzado && <span className={`pill ${forzado}`}>forzado {forzado}</span>}
           <button className="ghost" onClick={() => simular({ probe: "ok" })}>Probe ok</button>
@@ -315,7 +343,7 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
             </div>
           )}
           {error && <div className="error">{error}{ultimaSync ? ` Última sync: ${new Date(ultimaSync).toLocaleString()}` : ""}</div>}
-          {detalle && Pantalla && <Pantalla key={detalle.codigo} session={session} ultimaSync={ultimaSync} />}
+          {detalle && Pantalla && <Pantalla key={detalle.codigo} session={session} ultimaSync={ultimaSync} pedido={pedido} />}
           {detalle && !Pantalla && (
             <article className="module">
               <h2>{detalle.titulo}</h2>

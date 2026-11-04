@@ -6,6 +6,7 @@ import { migrate } from "./migrate.mjs";
 import { pullReplica, flushOutbox, probeCentral, estadoReal } from "./sync.mjs";
 import { crearServidor } from "./app.mjs";
 import { subirAuditoria } from "./auditoria.mjs";
+import { evaluarAlertas } from "./alertas.mjs";
 
 // Las rutas se registran en app.mjs.
 const server = crearServidor();
@@ -19,7 +20,17 @@ async function reconciliarStock() {
   ultimaReconciliacion = Date.now();
 }
 
+// HU-04: las alertas se evalúan cada 30 s, aunque no haya conexión con el central (RNF-04).
+const ALERTAS_MS = 30 * 1000;
+let ultimaEvaluacion = 0;
+
+async function evaluar() {
+  ultimaEvaluacion = Date.now();
+  await evaluarAlertas().catch((error) => console.error("alertas", error.message));
+}
+
 async function ciclo() {
+  if (Date.now() - ultimaEvaluacion >= ALERTAS_MS) await evaluar();
   // Se encola aunque el central esté caído: el outbox lo envía al reconectar.
   if (Date.now() - ultimaReconciliacion >= RECONCILIACION_MS) await reconciliarStock();
   await probeCentral();
@@ -37,6 +48,7 @@ if (config.seedDemo) {
   await seedLocalDemo(runtime.tiendaId).catch((error) => console.error("demo local", error.message));
 }
 await reconciliarStock().catch((error) => console.error("reconciliación de stock", error.message));
+await evaluar();
 await Promise.all([central.query("select 1"), local.query("select 1")]).catch((error) =>
   console.error("pre-warm", error.message),
 );
