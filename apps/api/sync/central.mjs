@@ -41,8 +41,32 @@ async function recetaDispensada(client, idTienda, event) {
   await aplicarBajaReceta(client, idTienda, event);
 }
 
+// HU-08: una venta de la tienda alimenta el consolidado por tienda, día y método de pago. Idempotente por inbox_sync:
+// un reintento no suma dos veces. total_facturas cuenta la factura en cada método con que se pagó.
+async function ventaRegistrada(client, idTienda, event) {
+  const inbox = await client.query(
+    `insert into inbox_sync (id_tienda_origen, idempotency_key, tipo_evento, payload)
+     values ($1, $2, $3, $4::jsonb) on conflict (id_tienda_origen, idempotency_key) do nothing`,
+    [idTienda, event.idempotency_key, event.tipo_evento, JSON.stringify(event.payload)],
+  );
+  if (inbox.rowCount === 0) return; // duplicado
+  const { fecha, pagos = [] } = event.payload;
+  for (const pago of pagos) {
+    await client.query(
+      `insert into venta_consolidada (id_tienda, fecha, id_metodo_pago, total_vendido, total_facturas, fecha_sincronizacion)
+       values ($1, $2::date, $3, $4::numeric, 1, now())
+       on conflict (id_tienda, fecha, id_metodo_pago) do update
+       set total_vendido = venta_consolidada.total_vendido + excluded.total_vendido,
+           total_facturas = venta_consolidada.total_facturas + 1,
+           fecha_sincronizacion = now()`,
+      [idTienda, fecha, pago.id_metodo_pago, pago.monto],
+    );
+  }
+}
+
 const APLICADORES = {
   STOCK_SNAPSHOT: stockSnapshot,
+  VENTA_REGISTRADA: ventaRegistrada,
   RECETA_DISPENSADA: recetaDispensada,
 };
 

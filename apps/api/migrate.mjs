@@ -3,7 +3,7 @@ import path from "path";
 import { central, local, runtime } from "./db.mjs";
 import { config, ROOT } from "./config.mjs";
 import { hashPassword } from "./crypto.mjs";
-import { seedCatalogoDemo, seedRecetasEmitidasDemo, seedRedDemo } from "./demo.mjs";
+import { seedCatalogoDemo, seedImpuestosDemo, seedRecetasEmitidasDemo, seedRedDemo } from "./demo.mjs";
 
 const dbDir = path.join(ROOT, "db");
 
@@ -189,12 +189,14 @@ async function emitirEmpleadosPendientes(client, idTienda) {
 const CATALOGO = [
   { tipo: "CATEGORIA_UPSERT", tabla: "categoria", id: "id_categoria", columnas: "id_categoria, nombre" },
   { tipo: "PROVEEDOR_UPSERT", tabla: "proveedor", id: "id_proveedor", columnas: "id_proveedor, nombre_empresa, activo" },
+  // HU-08: métodos de pago (los publica el primer arranque tras el script central 08).
+  { tipo: "METODO_PAGO_UPSERT", tabla: "metodo_pago", id: "id_metodo_pago", columnas: "id_metodo_pago, nombre, activo" },
   {
     tipo: "MEDICAMENTO_UPSERT",
     tabla: "medicamento",
     id: "id_medicamento",
     columnas:
-      "id_medicamento, codigo_interno, nombre_comercial, principio_activo, id_categoria, requiere_receta, requiere_refrigeracion, activo",
+      "id_medicamento, codigo_interno, nombre_comercial, principio_activo, id_categoria, requiere_receta, requiere_refrigeracion, activo, tasa_impuesto",
   },
   // HU-03: precios que aún no tienen evento (los demo y los cargados a mano). Después de los medicamentos,
   // de los que dependen. Lleva el nombre de quien lo registró: la tienda no tiene los empleados de la red.
@@ -354,6 +356,7 @@ export async function migrate({ log = () => {} } = {}) {
   // medicamentos. Los umbrales demo van después porque el nodo local los aplica en orden y dependen del medicamento.
   if (existe && config.seedDemo) await seedCatalogoDemo();
   if (existe) await emitCatalog(idTienda);
+  if (existe && config.seedDemo) await seedImpuestosDemo();
   if (existe && config.seedDemo) await seedRedDemo(idTienda);
   if (existe && config.seedDemo) await seedRecetasEmitidasDemo();
   return idTienda;

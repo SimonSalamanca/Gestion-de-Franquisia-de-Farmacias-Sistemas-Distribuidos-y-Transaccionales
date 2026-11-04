@@ -30,7 +30,7 @@ function esperado(nodo) {
       (cols[m[1]] ??= new Set()).add(m[2]);
     }
     // \b evita leer "pg_constraint WHERE ..." (consultas de catálogo en bloques DO) como una restricción.
-    for (const m of sql.matchAll(/(?:ADD )?\bCONSTRAINT (\w+)/gi)) nombres.add(m[1]);
+    for (const m of sql.matchAll(/(?:ADD )?\bCONSTRAINT (?!TRIGGER\b)(\w+)/gi)) nombres.add(m[1]);
     for (const m of sql.matchAll(/CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?(\w+)/gi)) nombres.add(m[1]);
     for (const m of sql.matchAll(/CREATE (?:OR REPLACE )?VIEW (\w+)/gi)) vistas.add(m[1]);
     for (const m of sql.matchAll(/CREATE (?:OR REPLACE )?FUNCTION (\w+)/gi)) funciones.add(m[1]);

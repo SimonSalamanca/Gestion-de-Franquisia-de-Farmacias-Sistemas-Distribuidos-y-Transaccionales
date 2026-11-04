@@ -160,6 +160,30 @@ export async function seedCatalogoDemo() {
 }
 
 // Nodo central, paso 2: una segunda tienda con stock consolidado y umbrales de ambas tiendas.
+// HU-08: impuesto de venta (%) de algunos medicamentos demo; el resto es exento. Se aplica a los que aún están en 0 y,
+// como el medicamento ya pudo publicarse sin tasa, se vuelve a publicar su MEDICAMENTO_UPSERT para que lo reciban las tiendas.
+const IMPUESTOS = [
+  ["MED-003", 5],
+  ["MED-010", 19],
+  ["MED-011", 19],
+];
+
+export async function seedImpuestosDemo() {
+  await withTx(central, async (client) => {
+    const cambiados = await client.query(
+      `update medicamento m set tasa_impuesto = i.tasa
+       from jsonb_to_recordset($1::jsonb) as i(codigo varchar, tasa numeric)
+       where m.codigo_interno = i.codigo and m.tasa_impuesto = 0
+       returning m.id_medicamento, m.codigo_interno, m.nombre_comercial, m.principio_activo, m.id_categoria,
+                 m.requiere_receta, m.requiere_refrigeracion, m.activo, m.tasa_impuesto`,
+      [JSON.stringify(IMPUESTOS.map(([codigo, tasa]) => ({ codigo, tasa })))],
+    );
+    for (const fila of cambiados.rows) {
+      await client.query("select append_replica_evento(null, 'MEDICAMENTO_UPSERT', 1, $1::jsonb)", [JSON.stringify(fila)]);
+    }
+  });
+}
+
 // HU-12: recetas emitidas de demostración (la EPS simulada). [código, paciente, documento, médico, días desde la emisión, [[medicamento, cantidad]]]
 const RECETAS_EMITIDAS = [
   ["RX-DEMO-001", "María Gómez", "1012345678", "Dr. Andrés Rojas", 2, [["MED-004", 2], ["MED-006", 30]]],
