@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
-import { DetalleMedicamento, Indicadores } from "./inventarioUi.jsx";
+import { DetalleMedicamento, Indicadores, pesos } from "./inventarioUi.jsx";
 
 // HU-01: búsqueda de medicamentos con filtros combinables y existencias en la red (RF-01, RF-03).
 // Refresca cada 5 s mientras la pantalla está visible; la red puede ir atrasada (RNF-13).
@@ -230,6 +230,7 @@ export default function Inventario({ session, ultimaSync }) {
                       <div className="muted">
                         {item.principio_activo} · {item.codigo_interno}{item.categoria ? ` · ${item.categoria}` : ""}
                       </div>
+                      <div><strong>{pesos(item.precio)}</strong> <span className="muted">precio vigente</span></div>
                       <div className="inv-marcas"><Indicadores medicamento={item} /></div>
                     </div>
                     <div className="inv-stock">

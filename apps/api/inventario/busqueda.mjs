@@ -74,6 +74,7 @@ export async function buscar(query, ctx, db = local) {
     select m.id_medicamento, m.codigo_interno, m.nombre_comercial, m.principio_activo,
            m.id_categoria, c.nombre as categoria, m.requiere_receta, m.requiere_refrigeracion,
            coalesce(s.stock, 0)::int as stock_tienda, u.stock_minimo,
+           precio_vigente(m.id_medicamento) as precio,
            case
              when coalesce(s.stock, 0) <= 0 then 'agotado'
              when u.stock_minimo is not null and s.stock <= u.stock_minimo then 'bajo'

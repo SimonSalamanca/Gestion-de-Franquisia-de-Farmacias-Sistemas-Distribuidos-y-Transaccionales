@@ -14,6 +14,12 @@ export function fechaHora(fecha) {
   return fecha ? new Date(fecha).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "";
 }
 
+// HU-03: precio en pesos colombianos. Llega como texto decimal desde numeric(12,2).
+const FORMATO_PESOS = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 2 });
+export function pesos(valor) {
+  return valor == null ? "Sin precio" : FORMATO_PESOS.format(Number(valor));
+}
+
 // Criterio 2 de HU-02: condición especial con texto además de color e ícono.
 export function Indicadores({ medicamento }) {
   if (!medicamento.requiere_refrigeracion && !medicamento.requiere_receta) return null;
