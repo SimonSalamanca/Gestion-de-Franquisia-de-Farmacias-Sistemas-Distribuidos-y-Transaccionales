@@ -166,7 +166,7 @@ Característica: HU-04 Gestionar alertas de stock bajo y caducidad
 
 Resultado (2026-11-04, rama de Neon `HU-Simon-Sprint2`): `test:hu04` 64/64. Regresión: `test:hu08` 85/85, `test:hu12` 71/71 y `probar-hu12-central` 70/70, `test:hu01` 39/39, `test:hu02` 38/38, `test:hu03` 44/44, `test:hu15` 47/47 y `db:verificar --estricto` sin diferencias. Recorrido en el navegador como cajero: el indicador "⚠ urgentes" abre la pestaña Alertas con el panel ordenado (Enalapril y Vacuna agotados, lote de Acetaminofén por caducar en 20 días, Amoxicilina con 8 de un mínimo de 10).
 
-**Salvedad:** `test:hu06` y `test:hu07` mostraron un fallo cada una (política de bloqueo de login y subida de la auditoría) mientras había un `npm run dev` ajeno sincronizando contra las mismas bases; ambas dependen del estado del enlace y de la subida de auditoría, que ese API mueve en paralelo. Quedan por repetir con el API detenido. Lo que HU-04 sí cambia en la auditoría (actor nulo del bloqueo automático) se comprobó aparte: las 16 filas `LOTE_BLOQUEO_AUTOMATICO` suben al central.
+**Nota:** `test:hu06` (37/37) y `test:hu07` (63/63) fallaron una vez cada una durante la regresión porque había un `npm run dev` sincronizando contra las mismas bases; repetidas con el API detenido pasan completas. Las pruebas escriben en las bases del `.env`: no se deben correr con un API levantado sobre ellas. Lo que HU-04 cambia en la auditoría (actor nulo del bloqueo automático) se comprobó aparte: las filas `LOTE_BLOQUEO_AUTOMATICO` suben al central.
 
 Hallazgos corregidos en el camino:
 - La clave foránea `alerta.id_lote → lote` hacía que la evaluación esperara a las ventas y podía interbloquearse con ellas: se quitó.
@@ -183,5 +183,5 @@ Hallazgos corregidos en el camino:
 | Paso | Resultado |
 | --- | --- |
 | Plan y decisiones | Todo producto con umbral; los que no cumplen se dan de baja (no se borran); rama de Git `hu-04` |
-| Implementación y pruebas | En verde salvo HU-06 y HU-07 por repetir con el API detenido (2026-11-04) |
+| Implementación y pruebas | En verde, incluida la regresión completa (2026-11-04) |
 | Auditor GPT-5.6 Luna | pendiente |
