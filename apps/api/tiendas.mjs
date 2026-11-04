@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { completarUmbrales, publicarUmbralesPendientes } from "./umbrales.mjs";
 import { central, PEPPER, withTx } from "./db.mjs";
 import { sesionDe } from "./auth.mjs";
 import { estadoReal, link } from "./sync.mjs";
@@ -144,6 +145,9 @@ export async function crearTienda(token, key, body) {
       );
       const row = inserted.rows[0];
       await publicarTienda(client, row);
+      // HU-04: una tienda activa necesita un umbral por cada medicamento activo (valores iniciales, ajustables luego).
+      await completarUmbrales(client, { idTienda: row.id_tienda });
+      await publicarUmbralesPendientes(client);
       await auditar(client, acceso.sesion.id_empleado, "TIENDA_CREAR", row.id_tienda, row.nombre);
       return guardar(client, key, hmac, { status: 201, body: { tienda: tiendaDe(row) } });
     });

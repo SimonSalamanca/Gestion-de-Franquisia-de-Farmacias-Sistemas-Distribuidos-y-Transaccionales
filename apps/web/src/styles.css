@@ -209,3 +209,5 @@ code { font-size: 12px; color: #5d726b; }
 @media (max-width: 860px) {
   .inv-filtros.dos, .inv-filtros.tres { grid-template-columns: 1fr; }
 }
+
+.pill.media { background: #e3effc; color: #1d4f8a; }

@@ -43,7 +43,8 @@ function sinRed(ultimaSync) {
   return `Existencias de la red no disponibles — última sincronización ${hora(ultimaSync)}`;
 }
 
-export default function Inventario({ session, ultimaSync }) {
+// incrustada: dentro de InventarioAlertas, que pone el título y las pestañas.
+export default function Inventario({ session, ultimaSync, incrustada = false }) {
   const [filtros, setFiltros] = useState(filtrosDeUrl);
   const [termino, setTermino] = useState(filtros.q);
   const [categorias, setCategorias] = useState([]);
@@ -166,10 +167,11 @@ export default function Inventario({ session, ultimaSync }) {
 
   const pagina = datos?.pagina ?? 1;
 
+  const Envoltorio = incrustada ? "div" : "article";
   return (
-    <article className="inventario">
+    <Envoltorio className={incrustada ? undefined : "inventario"}>
       <header className="inv-cabecera">
-        <h2>Inventario</h2>
+        {!incrustada && <h2>Inventario</h2>}
         <p className="muted">Busque por nombre comercial, principio activo o código.</p>
       </header>
 
@@ -263,7 +265,7 @@ export default function Inventario({ session, ultimaSync }) {
           )}
         </>
       )}
-    </article>
+    </Envoltorio>
   );
 }
 

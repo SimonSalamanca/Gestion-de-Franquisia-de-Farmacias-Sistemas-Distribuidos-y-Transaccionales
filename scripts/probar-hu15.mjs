@@ -77,8 +77,10 @@ let med = await central.query("select id_medicamento from medicamento order by i
 let medCreado = false;
 if (med.rowCount === 0) {
   med = await central.query(
-    `insert into medicamento (codigo_interno, nombre_comercial, principio_activo)
-     values ('HU15-TEST', 'Prueba HU15', 'prueba') returning id_medicamento`,
+    `with m as (insert into medicamento (codigo_interno, nombre_comercial, principio_activo)
+               values ('HU15-TEST', 'Prueba HU15', 'prueba') returning id_medicamento),
+          u as (insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
+     select id_medicamento from m`,
   );
   medCreado = true;
 }
