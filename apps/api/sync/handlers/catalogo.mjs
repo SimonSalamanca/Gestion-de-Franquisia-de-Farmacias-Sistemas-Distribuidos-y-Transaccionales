@@ -76,8 +76,8 @@ async function medicamentoUpsert(client, event) {
   await client.query(
     `insert into medicamento_ref (
        id_medicamento, codigo_interno, nombre_comercial, principio_activo, id_categoria,
-       requiere_receta, requiere_refrigeracion, activo
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+       requiere_receta, requiere_refrigeracion, activo, tasa_impuesto
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      on conflict (id_medicamento) do update set
        codigo_interno = excluded.codigo_interno,
        nombre_comercial = excluded.nombre_comercial,
@@ -85,7 +85,8 @@ async function medicamentoUpsert(client, event) {
        id_categoria = excluded.id_categoria,
        requiere_receta = excluded.requiere_receta,
        requiere_refrigeracion = excluded.requiere_refrigeracion,
-       activo = excluded.activo`,
+       activo = excluded.activo,
+       tasa_impuesto = excluded.tasa_impuesto`,
     [
       payload.id_medicamento,
       payload.codigo_interno,
@@ -95,7 +96,19 @@ async function medicamentoUpsert(client, event) {
       Boolean(payload.requiere_receta),
       Boolean(payload.requiere_refrigeracion),
       payload.activo !== false,
+      // HU-08: los eventos anteriores a la tasa no la traen: se toma exento hasta que llegue el evento con ella.
+      payload.tasa_impuesto ?? 0,
     ],
+  );
+}
+
+// HU-08: métodos de pago de la red, para cobrar sin conexión con el central.
+async function metodoPagoUpsert(client, event) {
+  const payload = event.payload;
+  await client.query(
+    `insert into metodo_pago_ref (id_metodo_pago, nombre, activo) values ($1, $2, $3)
+     on conflict (id_metodo_pago) do update set nombre = excluded.nombre, activo = excluded.activo`,
+    [payload.id_metodo_pago, payload.nombre, payload.activo !== false],
   );
 }
 
@@ -116,4 +129,5 @@ export default {
   CATEGORIA_UPSERT: categoriaUpsert,
   MEDICAMENTO_UPSERT: medicamentoUpsert,
   PROVEEDOR_UPSERT: proveedorUpsert,
+  METODO_PAGO_UPSERT: metodoPagoUpsert,
 };

@@ -32,7 +32,8 @@ function useEnvio(token) {
 const hoyLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const sumarDias = (iso, dias) => new Date(new Date(`${iso}T00:00:00Z`).getTime() + dias * 86400000).toISOString().slice(0, 10);
 
-export default function Recetas({ session }) {
+// incrustada: dentro de la caja (Caja.jsx), sin su propio encabezado.
+export default function Recetas({ session, incrustada = false }) {
   const [documento, setDocumento] = useState("");
   const [texto, setTexto] = useState("");
   const [lista, setLista] = useState(null);
@@ -60,10 +61,11 @@ export default function Recetas({ session }) {
     return () => clearTimeout(timer);
   }, [session.token, texto, documento, version]);
 
+  const Envoltorio = incrustada ? "div" : "article";
   return (
-    <article className="inventario">
+    <Envoltorio className={incrustada ? undefined : "inventario"}>
       <header className="inv-cabecera">
-        <h2>Recetas médicas</h2>
+        {!incrustada && <h2>Recetas médicas</h2>}
         <p className="muted">
           Los medicamentos controlados no se venden sin una receta vigente que los incluya. Escriba o escanee el código de la receta:
           el nodo central verifica que sea auténtica, esté vigente y no se haya reclamado, y la reserva para esta tienda. Al
@@ -103,7 +105,7 @@ export default function Recetas({ session }) {
           </li>
         ))}
       </ul>
-    </article>
+    </Envoltorio>
   );
 }
 
