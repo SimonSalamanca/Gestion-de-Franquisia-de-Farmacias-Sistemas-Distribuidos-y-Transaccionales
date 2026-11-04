@@ -12,10 +12,11 @@
     "test:hu01": "node scripts/probar-hu01.mjs",
     "test:hu02": "node scripts/probar-hu02.mjs",
     "test:hu03": "node scripts/probar-hu03.mjs",
-    "test:hu07":"node scripts/probar-hu07.mjs",
-    "test:hu15":"node scripts/probar-hu15.mjs && node scripts/probar-hu15-http.mjs",
+    "test:hu07": "node scripts/probar-hu07.mjs",
+    "test:hu15": "node scripts/probar-hu15.mjs && node scripts/probar-hu15-http.mjs",
     "test:sync": "node scripts/probar-sincronizacion.mjs",
-    "web": "npm run dev --prefix apps/web"
+    "web": "npm run dev --prefix apps/web",
+    "test:hu12": "node scripts/probar-hu12.mjs && node scripts/probar-hu12-central.mjs"
   },
   "dependencies": {
     "pg": "^8.23.1"

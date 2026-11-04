@@ -6,6 +6,8 @@ import Tiendas from "./Tiendas.jsx";
 import Empleados from "./Empleados.jsx";
 import Auditoria from "./Auditoria.jsx";
 import Precios from "./Precios.jsx";
+import Recetas from "./Recetas.jsx";
+import RecetasEmitidas from "./RecetasEmitidas.jsx";
 
 const CUENTAS = [
   { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
@@ -31,10 +33,10 @@ const AMBITO = {
 };
 
 // Módulos con pantalla propia, por nodo; el resto muestra la tarjeta del módulo.
-// Local: HU-01 y HU-02 (inventario del POS). Central: HU-15 (tiendas de la red). Ambos: HU-07 y HU-03.
+// Local: HU-01 y HU-02 (inventario del POS), HU-12 (recetas, dentro de Ventas). Central: HU-15 (tiendas de la red). Ambos: HU-07 y HU-03.
 const PANTALLAS = {
-  local: { INVENTARIO_CONSULTAR: Inventario, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios },
-  central: { TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios },
+  local: { INVENTARIO_CONSULTAR: Inventario, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, VENTA_REGISTRAR: Recetas },
+  central: { RED_CONTROL: RecetasEmitidas, TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios },
 };
 
 export default function App() {

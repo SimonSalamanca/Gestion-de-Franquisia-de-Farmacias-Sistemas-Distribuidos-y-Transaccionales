@@ -35,8 +35,15 @@ async function foldEvento(client, idTienda, event) {
   ]);
 }
 
+// HU-12: baja de una receta validada con el central. Import perezoso: recetas-red usa el enlace con el central.
+async function recetaDispensada(client, idTienda, event) {
+  const { aplicarBajaReceta } = await import("../recetas-red.mjs");
+  await aplicarBajaReceta(client, idTienda, event);
+}
+
 const APLICADORES = {
   STOCK_SNAPSHOT: stockSnapshot,
+  RECETA_DISPENSADA: recetaDispensada,
 };
 
 export async function aplicarEnCentral(client, idTienda, event) {

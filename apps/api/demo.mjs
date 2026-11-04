@@ -160,6 +160,33 @@ export async function seedCatalogoDemo() {
 }
 
 // Nodo central, paso 2: una segunda tienda con stock consolidado y umbrales de ambas tiendas.
+// HU-12: recetas emitidas de demostración (la EPS simulada). [código, paciente, documento, médico, días desde la emisión, [[medicamento, cantidad]]]
+const RECETAS_EMITIDAS = [
+  ["RX-DEMO-001", "María Gómez", "1012345678", "Dr. Andrés Rojas", 2, [["MED-004", 2], ["MED-006", 30]]],
+  ["RX-DEMO-002", "Carlos Pérez", "80123456", "Dra. Laura Méndez", 5, [["MED-009", 60]]],
+  ["RX-DEMO-VENCIDA", "Luis Torres", "79456123", "Dr. Andrés Rojas", 45, [["MED-005", 1]]],
+];
+
+export async function seedRecetasEmitidasDemo() {
+  await withTx(central, async (client) => {
+    const ids = await idsPorCodigo(client, "medicamento");
+    for (const [codigo, paciente, documento, medico, dias, lineas] of RECETAS_EMITIDAS) {
+      const creada = await client.query(
+        `insert into receta_emitida (codigo, paciente_nombre, paciente_documento, medico_prescriptor, fecha_emision)
+         values ($1, $2, $3, $4, current_date - $5::int) on conflict (codigo) do nothing returning id_receta_emitida`,
+        [codigo, paciente, documento, medico, dias],
+      );
+      if (creada.rowCount === 0) continue;
+      for (const [medicamento, cantidad] of lineas) {
+        await client.query(
+          "insert into receta_emitida_medicamento (id_receta_emitida, id_medicamento, cantidad_autorizada) values ($1, $2, $3)",
+          [creada.rows[0].id_receta_emitida, ids.get(medicamento), cantidad],
+        );
+      }
+    }
+  });
+}
+
 export async function seedRedDemo(idTienda) {
   await withTx(central, async (client) => {
     const red = await client.query(
