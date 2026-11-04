@@ -6,11 +6,19 @@ import inventario from "./routes/inventario.mjs";
 import lotes from "./routes/lotes.mjs";
 import tiendas from "./routes/tiendas.mjs";
 import empleados from "./routes/empleados.mjs";
+import precios from "./routes/precios.mjs";
 import { ErrorNegocio } from "./errores.mjs";
 
 // Cada módulo de rutas registra las suyas. Para una HU nueva: routes/<dominio>.mjs y agregarlo aquí.
 // Separado de server.mjs para que las pruebas HTTP levanten el mismo servidor sin el ciclo de sync.
-const router = crearRouter().usar(sistema).usar(auth).usar(inventario).usar(lotes).usar(tiendas).usar(empleados);
+const router = crearRouter()
+  .usar(sistema)
+  .usar(auth)
+  .usar(inventario)
+  .usar(lotes)
+  .usar(tiendas)
+  .usar(empleados)
+  .usar(precios);
 
 export function crearServidor() {
   return http.createServer(async (req, res) => {

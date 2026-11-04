@@ -3,11 +3,12 @@ import catalogo from "./catalogo.mjs";
 import empleado from "./empleado.mjs";
 import acceso from "./acceso.mjs";
 import tienda from "./tienda.mjs";
+import precio from "./precio.mjs";
 
 // Registro de handlers por tipo de evento de replica_evento.
 // Para un tipo nuevo: crear handlers/<dominio>.mjs que exporte { TIPO: fn } y agregarlo aquí.
 // Firma: async (client, event, idTienda) => void, dentro de la transacción del pull.
-const GRUPOS = { catalogo, empleado, acceso, tienda };
+const GRUPOS = { catalogo, empleado, acceso, tienda, precio };
 
 export const HANDLERS = {};
 for (const [grupo, handlers] of Object.entries(GRUPOS)) {

@@ -76,6 +76,13 @@ Desde HU-07, `registro_actividad` (local), `registro_actividad_central` y `audit
 - Registre sus acciones críticas con un `insert` en `registro_actividad` (o `registro_actividad_central` si la operación es del central), en la misma transacción que la operación. La consulta de HU-07 y la subida al central las toman sin cambios.
 - No borre empleados ni filas de auditoría, tampoco en las pruebas: desactive la cuenta (`activo = false`, `fecha_baja`) y use usuarios únicos por corrida.
 
+## Precios y facturas
+
+Desde HU-03 la tienda tiene el historial completo de precios de red (`precio_ref`) y la función `precio_vigente(id_medicamento, instante)`. La venta (HU-08) debe:
+
+- Fijar `detalle_factura.precio_unitario_aplicado = precio_vigente(id_medicamento, factura.fecha_hora)` dentro de su transacción, y rechazar la venta si devuelve `NULL` (medicamento sin precio).
+- No intentar modificar una factura emitida: un trigger rechaza cambios de precio, cantidad, lote e importes, y el borrado de líneas. El estado sí puede cambiar (HU-10).
+
 ## Fechas
 
 Neon corre en GMT. La API lee las columnas `timestamp without time zone` como UTC y envía las fechas en UTC (`db.mjs`). Use `now()` de la base para plazos (bloqueos, vencimientos), no la hora del servidor de la API. Muestre la hora local solo en el frontend.

@@ -5,6 +5,7 @@ import Lotes from "./Lotes.jsx";
 import Tiendas from "./Tiendas.jsx";
 import Empleados from "./Empleados.jsx";
 import Auditoria from "./Auditoria.jsx";
+import Precios from "./Precios.jsx";
 
 const CUENTAS = [
   { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
@@ -17,7 +18,6 @@ const AMBITO = {
   INVENTARIO_GESTIONAR: "tienda",
   VENTA_REGISTRAR: "tienda",
   FACTURA_ANULAR: "tienda",
-  PRECIO_GESTIONAR: "tienda",
   CAJA_CERRAR: "tienda",
   RED_VISIBILIDAD: "red",
   RED_CONTROL: "red",
@@ -26,13 +26,15 @@ const AMBITO = {
   // HU-07: en el POS (su tienda) y en la consola (toda la red).
   EMPLEADO_GESTIONAR: "ambos",
   AUDITORIA_CONSULTAR: "ambos",
+  // HU-03: precio de red; lo cambian el admin de tienda (POS) y el admin general (consola).
+  PRECIO_GESTIONAR: "ambos",
 };
 
 // Módulos con pantalla propia, por nodo; el resto muestra la tarjeta del módulo.
-// Local: HU-01 y HU-02 (inventario del POS). Central: HU-15 (tiendas de la red). Ambos: HU-07.
+// Local: HU-01 y HU-02 (inventario del POS). Central: HU-15 (tiendas de la red). Ambos: HU-07 y HU-03.
 const PANTALLAS = {
-  local: { INVENTARIO_CONSULTAR: Inventario, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria },
-  central: { TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria },
+  local: { INVENTARIO_CONSULTAR: Inventario, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios },
+  central: { TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios },
 };
 
 export default function App() {

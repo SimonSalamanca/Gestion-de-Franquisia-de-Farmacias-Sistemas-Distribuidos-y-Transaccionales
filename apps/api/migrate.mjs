@@ -196,19 +196,30 @@ const CATALOGO = [
     columnas:
       "id_medicamento, codigo_interno, nombre_comercial, principio_activo, id_categoria, requiere_receta, requiere_refrigeracion, activo",
   },
+  // HU-03: precios que aún no tienen evento (los demo y los cargados a mano). Después de los medicamentos,
+  // de los que dependen. Lleva el nombre de quien lo registró: la tienda no tiene los empleados de la red.
+  {
+    tipo: "PRECIO_UPSERT",
+    tabla: "precio_medicamento",
+    desde: "precio_medicamento t left join empleado e on e.id_empleado = t.id_empleado_registro",
+    id: "id_precio",
+    columnas:
+      "t.id_precio, t.id_medicamento, t.precio, t.fecha_inicio_vigencia, t.fecha_fin_vigencia, t.id_empleado_registro, e.nombre_completo as registrado_por",
+  },
 ];
 
 async function emitirCatalogoPendiente(client) {
   let emitidos = 0;
-  for (const { tipo, tabla, id, columnas } of CATALOGO) {
+  for (const { tipo, tabla, desde, id, columnas } of CATALOGO) {
     // Solo las filas sin evento, en una consulta: tras el primer arranque no devuelve ninguna.
+    // `desde` permite unir otra tabla; la principal siempre se llama t.
     const filas = await client.query(
-      `select ${columnas} from ${tabla} t
+      `select ${columnas} from ${desde ?? `${tabla} t`}
        where not exists (
          select 1 from replica_evento r
          where r.tipo_evento = $1 and (r.payload ->> '${id}')::integer = t.${id}
        )
-       order by ${id}`,
+       order by t.${id}`,
       [tipo],
     );
     for (const fila of filas.rows) {

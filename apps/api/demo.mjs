@@ -29,7 +29,25 @@ const PROVEEDORES = [
   ["MediSur Logística S.A.S.", "900500600-3", "6015550403"],
 ];
 
-const TIENDA_RED = { nombre: "Farmacia Norte", direccion: "Calle 140 #15-30", ciudad: "Bogotá", telefono: "6015550111" };
+// HU-03: precio de red de cada medicamento: [código, precio en pesos, días hasta que rige].
+// Ibuprofeno trae además un precio programado a 30 días para ver un cambio de precio futuro.
+const PRECIOS = [
+  ["MED-001", 4200, 0],
+  ["MED-002", 6800, 0],
+  ["MED-002", 7300, 30],
+  ["MED-003", 8900, 0],
+  ["MED-004", 12500, 0],
+  ["MED-005", 24900, 0],
+  ["MED-006", 15600, 0],
+  ["MED-007", 9800, 0],
+  ["MED-008", 68000, 0],
+  ["MED-009", 11200, 0],
+  ["MED-010", 7400, 0],
+  ["MED-011", 8600, 0],
+  ["MED-012", 45000, 0],
+];
+
+const TIENDA_RED ={ nombre: "Farmacia Norte", direccion: "Calle 140 #15-30", ciudad: "Bogotá", telefono: "6015550111" };
 
 // Umbrales de stock mínimo por tienda: [código, stock_minimo, dias_alerta_caducidad]
 const UMBRALES_PROPIA = [
@@ -115,6 +133,29 @@ export async function seedCatalogoDemo() {
        on conflict (nit) do nothing`,
       [filas(PROVEEDORES, ([nombre, nit, telefono]) => ({ nombre, nit, telefono }))],
     );
+    // Solo para medicamentos que aún no tienen ningún precio: un reinicio no agrega otro (now() cambia).
+    // Sin id_empleado_registro: los registra el sistema. Luego se cierra cada periodo con el inicio del siguiente.
+    const nuevos = await client.query(
+      `insert into precio_medicamento (id_medicamento, precio, fecha_inicio_vigencia)
+       select m.id_medicamento, p.precio, now()::timestamp + make_interval(days => p.dias)
+       from jsonb_to_recordset($1::jsonb) as p(orden int, codigo varchar, precio numeric, dias int)
+       join medicamento m on m.codigo_interno = p.codigo
+       where not exists (select 1 from precio_medicamento x where x.id_medicamento = m.id_medicamento)
+       order by p.orden
+       returning id_medicamento`,
+      [filas(PRECIOS, ([codigo, precio, dias]) => ({ codigo, precio, dias }))],
+    );
+    if (nuevos.rowCount > 0) {
+      await client.query(
+        `update precio_medicamento p set fecha_fin_vigencia = s.siguiente
+         from (
+           select id_precio, lead(fecha_inicio_vigencia) over (partition by id_medicamento order by fecha_inicio_vigencia) as siguiente
+           from precio_medicamento where id_medicamento = any($1::int[])
+         ) s
+         where p.id_precio = s.id_precio and s.siguiente is not null and p.fecha_fin_vigencia is null`,
+        [nuevos.rows.map((row) => row.id_medicamento)],
+      );
+    }
   });
 }
 
