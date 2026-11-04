@@ -3,7 +3,7 @@ import path from "path";
 import { central, local, runtime } from "./db.mjs";
 import { config, ROOT } from "./config.mjs";
 import { hashPassword } from "./crypto.mjs";
-import { seedCatalogoDemo, seedRedDemo } from "./demo.mjs";
+import { seedCatalogoDemo, seedRecetasEmitidasDemo, seedRedDemo } from "./demo.mjs";
 
 const dbDir = path.join(ROOT, "db");
 
@@ -355,6 +355,7 @@ export async function migrate({ log = () => {} } = {}) {
   if (existe && config.seedDemo) await seedCatalogoDemo();
   if (existe) await emitCatalog(idTienda);
   if (existe && config.seedDemo) await seedRedDemo(idTienda);
+  if (existe && config.seedDemo) await seedRecetasEmitidasDemo();
   return idTienda;
 }
 

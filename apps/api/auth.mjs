@@ -15,7 +15,7 @@ const ROLE_LABEL = {
 export const MODULES = {
   INVENTARIO_CONSULTAR: { titulo: "Inventario", ambito: "tienda", texto: "Búsqueda de medicamentos y existencias en esta tienda y en la red." },
   INVENTARIO_GESTIONAR: { titulo: "Lotes y recepción", ambito: "tienda", texto: "Registro de lotes, recepción de pedidos y ajustes con historial." },
-  VENTA_REGISTRAR: { titulo: "Ventas", ambito: "tienda", texto: "Registro de venta y facturación en el punto de venta." },
+  VENTA_REGISTRAR: { titulo: "Ventas y recetas", ambito: "tienda", texto: "Registro de venta y facturación; receta médica para los medicamentos que la requieren." },
   FACTURA_ANULAR: { titulo: "Anulaciones", ambito: "tienda", texto: "Anulación o devolución con motivo obligatorio." },
   PRECIO_GESTIONAR: { titulo: "Precios", ambito: "tienda", texto: "Precio de red vigente, programado e historial. No altera facturas ya emitidas." },
   EMPLEADO_GESTIONAR: { titulo: "Empleados", ambito: "tienda", texto: "Cuentas, roles y restablecimiento de contraseña." },
