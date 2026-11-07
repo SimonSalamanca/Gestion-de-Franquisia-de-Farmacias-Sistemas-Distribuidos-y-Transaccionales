@@ -53,7 +53,7 @@ async function real(url) {
                             where connamespace = 'public'::regnamespace and contype in ('c', 'f', 'p', 'u')`),
       indices: await q(`select tablename as tabla, indexname from pg_indexes where schemaname = 'public'`),
       vistas: (await q("select viewname from pg_views where schemaname = 'public'")).map((r) => r.viewname),
-      funciones: (await q("select proname from pg_proc where pronamespace = 'public'::regnamespace")).map((r) => r.proname),
+      funciones: (await q("select proname from pg_proc p where pronamespace = 'public'::regnamespace and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')")).map((r) => r.proname),
     };
   } finally {
     await client.end();
