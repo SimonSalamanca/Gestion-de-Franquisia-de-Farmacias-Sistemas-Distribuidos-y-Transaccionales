@@ -211,3 +211,11 @@ code { font-size: 12px; color: #5d726b; }
 }
 
 .pill.media { background: #e3effc; color: #1d4f8a; }
+
+/* HU-09: al reimprimir solo sale la factura. */
+@media print {
+  body * { visibility: hidden; }
+  .factura-impresion, .factura-impresion * { visibility: visible; }
+  .factura-impresion { position: absolute; left: 0; top: 0; width: 100%; }
+  .no-print { display: none; }
+}

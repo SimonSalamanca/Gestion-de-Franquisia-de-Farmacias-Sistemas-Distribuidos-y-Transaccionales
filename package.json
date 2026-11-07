@@ -16,6 +16,7 @@
     "test:hu04": "node scripts/probar-hu04.mjs",
     "test:hu07": "node scripts/probar-hu07.mjs",
     "test:hu08": "node scripts/probar-hu08.mjs",
+    "test:hu09": "node scripts/probar-hu09.mjs",
     "test:hu15": "node scripts/probar-hu15.mjs && node scripts/probar-hu15-http.mjs",
     "test:sync": "node scripts/probar-sincronizacion.mjs",
     "web": "npm run dev --prefix apps/web",
