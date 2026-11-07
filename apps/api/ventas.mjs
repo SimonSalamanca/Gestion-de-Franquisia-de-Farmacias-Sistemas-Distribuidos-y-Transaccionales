@@ -29,14 +29,14 @@ const ETIQUETAS = { efectivo: "Efectivo", tarjeta_debito: "Tarjeta débito", tar
 const etiquetaMetodo = (codigo) => ETIQUETAS[codigo] ?? String(codigo).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
 // "1234.5" -> 123450 centavos. Rechaza más de dos decimales.
-function aCentavos(valor, campo) {
+export function aCentavos(valor, campo) {
   const t = texto(valor).replace(",", ".");
   if (!MONTO_RE.test(t)) throw invalido("Importe no válido: máximo dos decimales", { campo });
   const [enteros, decimales = ""] = t.split(".");
   return Number(enteros) * 100 + Number(decimales.padEnd(2, "0"));
 }
 
-const aDecimal = (centavos) => `${Math.floor(centavos / 100)}.${String(centavos % 100).padStart(2, "0")}`;
+export const aDecimal = (centavos) => `${Math.floor(centavos / 100)}.${String(centavos % 100).padStart(2, "0")}`;
 
 function entero(valor, campo, maximo = 2_000_000_000) {
   const n = Number(valor);
@@ -176,7 +176,7 @@ export async function facturaDe(db, idFactura) {
     `select f.id_factura, f.numero_factura, f.fecha_hora, f.subtotal::text, f.impuestos::text, f.total::text, f.estado,
             e.nombre_completo as cajero, c.nombre as cliente,
             (select coalesce(jsonb_agg(jsonb_build_object(
-                      'id_medicamento', m.id_medicamento, 'medicamento', m.nombre_comercial, 'lote', l.numero_lote,
+                      'id_lote', l.id_lote, 'id_medicamento', m.id_medicamento, 'medicamento', m.nombre_comercial, 'lote', l.numero_lote,
                       'cantidad', d.cantidad, 'precio_unitario', d.precio_unitario_aplicado::text,
                       'tasa_impuesto', d.tasa_impuesto::text, 'subtotal', d.subtotal_linea::text,
                       'impuesto', d.impuesto_linea::text, 'id_receta', d.id_receta, 'codigo_receta', rc.codigo_receta
