@@ -64,7 +64,31 @@ async function ventaRegistrada(client, idTienda, event) {
   }
 }
 
+// HU-10: una anulación o devolución resta el valor reintegrado del consolidado por tienda, día y método de pago. Se
+// registra en el día de la nota (nota de crédito), no en el de la venta, para no reescribir días ya cerrados.
+// Idempotente por inbox_sync: un reintento no resta dos veces.
+async function devolucionRegistrada(client, idTienda, event) {
+  const inbox = await client.query(
+    `insert into inbox_sync (id_tienda_origen, idempotency_key, tipo_evento, payload)
+     values ($1, $2, $3, $4::jsonb) on conflict (id_tienda_origen, idempotency_key) do nothing`,
+    [idTienda, event.idempotency_key, event.tipo_evento, JSON.stringify(event.payload)],
+  );
+  if (inbox.rowCount === 0) return; // duplicado
+  const { fecha, pagos = [] } = event.payload;
+  for (const pago of pagos) {
+    await client.query(
+      `insert into venta_consolidada (id_tienda, fecha, id_metodo_pago, total_vendido, total_facturas, fecha_sincronizacion)
+       values ($1, $2::date, $3, -$4::numeric, 0, now())
+       on conflict (id_tienda, fecha, id_metodo_pago) do update
+       set total_vendido = venta_consolidada.total_vendido - $4::numeric,
+           fecha_sincronizacion = now()`,
+      [idTienda, fecha, pago.id_metodo_pago, pago.monto],
+    );
+  }
+}
+
 const APLICADORES = {
+  DEVOLUCION_REGISTRADA: devolucionRegistrada,
   STOCK_SNAPSHOT: stockSnapshot,
   VENTA_REGISTRADA: ventaRegistrada,
   RECETA_DISPENSADA: recetaDispensada,
