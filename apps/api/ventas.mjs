@@ -237,6 +237,14 @@ export async function registrarVenta(sesion, key, body) {
   const idTienda = runtime.tiendaId;
 
   return conIdempotencia(local, { key, operacion: "VENTA_REGISTRAR", idEmpleado: sesion.id_empleado, body }, async (client) => {
+    // 0. HU-11: con la caja cerrada no se vende. FOR SHARE: el cierre (FOR UPDATE) espera a las ventas en curso y, una vez
+    //    cerrada la caja, esta consulta ya la ve cerrada. Es lo primero que hace la venta, antes de bloquear lotes. El trigger
+    //    factura_periodo_caja de la base lo garantiza para cualquier otro camino.
+    const caja = await client.query("select abierta from caja_control where id = 1 for share");
+    if (!caja.rows[0]?.abierta) {
+      throw new ErrorNegocio(409, "CAJA_CERRADA", "La caja está cerrada: un administrador debe abrir un nuevo periodo para registrar ventas");
+    }
+
     // 1. Cálculo con los lotes bloqueados: de aquí hasta el commit nadie más puede descontarlos.
     const plan = await planear(client, lineas, { bloquear: true });
     if (plan.problemas.length > 0) {

@@ -13,6 +13,7 @@ const TRAZOS = {
   empleados: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3.5 3.5 0 0 1 0 6.5M18 14c1.8.8 3 2.7 3 5",
   auditoria: "M12 3 4.5 6v5.5c0 4.5 3.2 8.2 7.5 9.5 4.3-1.3 7.5-5 7.5-9.5V6zM9 12l2 2 4-4",
   precios: "M3 12V4h8l9.5 9.5-8 8zM7.5 8a.5.5 0 1 0 0-.01",
+  proveedores: "M2 6h12v10H2zM14 9h4l3 3v4h-7zM6.5 19a1.5 1.5 0 1 0 0-.01M17.5 19a1.5 1.5 0 1 0 0-.01",
   modulo: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
   menu: "M4 7h16M4 12h16M4 17h16",
   panelCerrar: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM9.5 4v16M16 10l-2 2 2 2",
@@ -67,6 +68,7 @@ export const ICONO_MODULO = {
   EMPLEADO_GESTIONAR: "empleados",
   AUDITORIA_CONSULTAR: "auditoria",
   PRECIO_GESTIONAR: "precios",
+  PROVEEDOR_GESTIONAR: "proveedores",
 };
 
 // Marca de FarmaHub: cruz de farmacia dentro de un cuadro redondeado.

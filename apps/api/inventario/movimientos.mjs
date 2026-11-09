@@ -27,6 +27,8 @@ export async function registrarMovimiento(
     referencia = null,
     observaciones = null,
     idTraslado = null,
+    // HU-17: ORIGEN o DESTINO, para ligar el movimiento a su traslado_local (fk_movimiento_traslado).
+    rolTraslado = null,
     // false cuando el llamador registra varios movimientos y publica el stock una sola vez al final.
     publicarStock = true,
   },
@@ -35,7 +37,9 @@ export async function registrarMovimiento(
   const signo = tipo === "AJUSTE" ? Number(sentido) : SENTIDO_FIJO[tipo];
   if (signo !== 1 && signo !== -1) throw invalido("El ajuste debe indicar si suma o resta");
   if (!Number.isInteger(cantidad) || cantidad <= 0) throw invalido("La cantidad debe ser un entero mayor que cero");
-  if (!idEmpleado) throw invalido("Falta el empleado responsable");
+  // HU-17: el paso de un traslado lo ejecuta el sistema por orden del central (sin responsable en esta tienda). Cualquier
+  // otro movimiento exige el empleado que lo hace.
+  if (!idEmpleado && !(idTraslado && rolTraslado)) throw invalido("Falta el empleado responsable");
 
   // RNF-06: el bloqueo de fila serializa movimientos concurrentes sobre el mismo lote.
   const result = await client.query(
@@ -65,20 +69,21 @@ export async function registrarMovimiento(
        update lote set cantidad_disponible = $9, estado = $10 where id_lote = $1
      )
      insert into movimiento_inventario (
-       id_lote, tipo_movimiento, sentido, cantidad, id_empleado, referencia_documento, id_traslado, observaciones
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+       id_lote, tipo_movimiento, sentido, cantidad, id_empleado, referencia_documento, id_traslado, observaciones, rol_tienda_traslado
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $11)
      returning id_movimiento, fecha_hora`,
     [
       idLote,
       tipo,
       signo,
       cantidad,
-      idEmpleado,
+      idEmpleado || null,
       referencia ? String(referencia).slice(0, 60) : null,
       idTraslado,
       observaciones ? String(observaciones).slice(0, 300) : null,
       nuevo,
       estado,
+      rolTraslado,
     ],
   );
 

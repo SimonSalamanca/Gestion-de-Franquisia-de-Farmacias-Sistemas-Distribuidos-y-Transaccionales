@@ -108,7 +108,18 @@ async function devolucionRegistrada(client, idTienda, event) {
   await sumarCategorias(client, idTienda, fecha, event.payload.categorias, -1);
 }
 
+// HU-17: respuestas de las tiendas en un traslado. Import perezoso: traslados.mjs usa el enlace con el central (ciclo).
+const traslado = (tipo) => async (client, idTienda, event) => {
+  const { APLICADORES_TRASLADO } = await import("../traslados.mjs");
+  await APLICADORES_TRASLADO[tipo](client, idTienda, event);
+};
+
 const APLICADORES = {
+  TRASLADO_DESCONTADO: traslado("TRASLADO_DESCONTADO"),
+  TRASLADO_RECHAZADO: traslado("TRASLADO_RECHAZADO"),
+  TRASLADO_RECIBIDO: traslado("TRASLADO_RECIBIDO"),
+  TRASLADO_INGRESO_FALLIDO: traslado("TRASLADO_INGRESO_FALLIDO"),
+  TRASLADO_COMPENSADO: traslado("TRASLADO_COMPENSADO"),
   DEVOLUCION_REGISTRADA: devolucionRegistrada,
   STOCK_SNAPSHOT: stockSnapshot,
   VENTA_REGISTRADA: ventaRegistrada,

@@ -112,12 +112,31 @@ async function metodoPagoUpsert(client, event) {
   );
 }
 
+// HU-13: el evento lleva la fila completa del proveedor (NIT y contacto). Los eventos anteriores solo traían nombre y
+// estado: sin la clave `nit` se conservan los datos de contacto que ya tenga la tienda.
 async function proveedorUpsert(client, event) {
   const payload = event.payload;
+  const completo = Object.hasOwn(payload, "nit");
   await client.query(
-    `insert into proveedor_ref (id_proveedor, nombre_empresa, activo) values ($1, $2, $3)
-     on conflict (id_proveedor) do update set nombre_empresa = excluded.nombre_empresa, activo = excluded.activo`,
-    [payload.id_proveedor, payload.nombre_empresa, payload.activo !== false],
+    `insert into proveedor_ref (id_proveedor, nombre_empresa, activo, nit, telefono, correo, direccion)
+     values ($1, $2, $3, $4, $5, $6, $7)
+     on conflict (id_proveedor) do update set
+       nombre_empresa = excluded.nombre_empresa,
+       activo = excluded.activo,
+       nit = case when $8::boolean then excluded.nit else proveedor_ref.nit end,
+       telefono = case when $8::boolean then excluded.telefono else proveedor_ref.telefono end,
+       correo = case when $8::boolean then excluded.correo else proveedor_ref.correo end,
+       direccion = case when $8::boolean then excluded.direccion else proveedor_ref.direccion end`,
+    [
+      payload.id_proveedor,
+      payload.nombre_empresa,
+      payload.activo !== false,
+      payload.nit ?? null,
+      payload.telefono ?? null,
+      payload.correo ?? null,
+      payload.direccion ?? null,
+      completo,
+    ],
   );
 }
 

@@ -56,7 +56,8 @@ async function aplicarScripts(nodo) {
   try {
     // Evita que dos procesos apliquen scripts a la vez sobre la misma base.
     await client.query("select pg_advisory_lock($1)", [LOCK_MIGRACION]);
-    const existe = await client.query("select to_regclass($1) is not null as ok", [`public.${tablaBase}`]);
+    // Sin esquema fijo: respeta el search_path de la conexión (HU-17: la prueba levanta una segunda tienda en otro esquema).
+    const existe = await client.query("select to_regclass($1) is not null as ok", [tablaBase]);
     const aplicados = [];
     for (const script of scriptsDe(nodo)) {
       if (script.base && existe.rows[0].ok) continue;
@@ -189,7 +190,13 @@ async function emitirEmpleadosPendientes(client, idTienda) {
 // publicada los debe publicar la historia que administre el catálogo (no hay una en el sprint 1).
 const CATALOGO = [
   { tipo: "CATEGORIA_UPSERT", tabla: "categoria", id: "id_categoria", columnas: "id_categoria, nombre" },
-  { tipo: "PROVEEDOR_UPSERT", tabla: "proveedor", id: "id_proveedor", columnas: "id_proveedor, nombre_empresa, activo" },
+  // HU-13: la fila completa (NIT y contacto) para que la tienda consulte el registro sin conexión.
+  {
+    tipo: "PROVEEDOR_UPSERT",
+    tabla: "proveedor",
+    id: "id_proveedor",
+    columnas: "id_proveedor, nombre_empresa, nit, telefono, correo, direccion, activo",
+  },
   // HU-08: métodos de pago (los publica el primer arranque tras el script central 08).
   { tipo: "METODO_PAGO_UPSERT", tabla: "metodo_pago", id: "id_metodo_pago", columnas: "id_metodo_pago, nombre, activo" },
   {
@@ -233,6 +240,24 @@ async function emitirCatalogoPendiente(client) {
   return emitidos;
 }
 
+// HU-13: los proveedores publicados antes de esta historia solo llevan nombre y estado. Se vuelven a publicar con su NIT
+// y contacto, una sola vez (después ya tienen un evento completo y esta consulta no devuelve nada).
+async function emitirProveedoresSinContacto(client) {
+  const filas = await client.query(
+    `select p.id_proveedor, p.nombre_empresa, p.nit, p.telefono, p.correo, p.direccion, p.activo
+     from proveedor p
+     where not exists (
+       select 1 from replica_evento r
+       where r.tipo_evento = 'PROVEEDOR_UPSERT' and r.payload ? 'nit' and (r.payload ->> 'id_proveedor')::integer = p.id_proveedor
+     )
+     order by p.id_proveedor`,
+  );
+  for (const fila of filas.rows) {
+    await client.query("select append_replica_evento(null, 'PROVEEDOR_UPSERT', 1, $1::jsonb)", [JSON.stringify(fila)]);
+  }
+  return filas.rowCount;
+}
+
 async function emitCatalog(idTienda) {
   const client = await central.connect();
   try {
@@ -240,6 +265,7 @@ async function emitCatalog(idTienda) {
     await emitirCatalogoGlobal(client, idTienda);
     await emitirEmpleadosPendientes(client, idTienda);
     await emitirCatalogoPendiente(client);
+    await emitirProveedoresSinContacto(client);
     await publicarUmbralesPendientes(client);
     await client.query("commit");
   } catch (error) {

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "./api.js";
 import Ventas from "./Ventas.jsx";
 import Recetas from "./Recetas.jsx";
 import Historial from "./Historial.jsx";
@@ -7,6 +8,18 @@ import Historial from "./Historial.jsx";
 // quedan montadas para no perder el carrito al validar una receta.
 export default function Caja({ session }) {
   const [pestana, setPestana] = useState("venta");
+  // HU-11: con la caja cerrada (cierre del periodo) no se vende; se avisa antes de armar la venta.
+  const [caja, setCaja] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    const consultar = () => api("/api/local/caja/estado", { token: session.token }).then((r) => vivo && r.ok && setCaja(r.data));
+    consultar();
+    const timer = setInterval(consultar, 15000);
+    return () => {
+      vivo = false;
+      clearInterval(timer);
+    };
+  }, [session.token]);
   return (
     <article className="inventario">
       <header className="inv-cabecera">
@@ -17,6 +30,11 @@ export default function Caja({ session }) {
           <button role="tab" aria-selected={pestana === "historial"} className={pestana === "historial" ? "active" : ""} onClick={() => setPestana("historial")}>Historial</button>
         </div>
       </header>
+      {caja && !caja.abierta && (
+        <div className="error" role="alert">
+          La caja está cerrada: no se pueden registrar ventas hasta que un administrador abra un nuevo periodo (módulo Cierre de caja).
+        </div>
+      )}
       <div hidden={pestana !== "venta"}><Ventas session={session} /></div>
       <div hidden={pestana !== "recetas"}><Recetas session={session} incrustada /></div>
       {pestana === "historial" && <Historial session={session} />}

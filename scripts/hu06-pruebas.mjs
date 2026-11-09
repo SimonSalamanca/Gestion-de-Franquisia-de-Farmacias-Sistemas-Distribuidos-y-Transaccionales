@@ -182,7 +182,7 @@ await paso("CA3 admin de tienda", async () => {
   const at = await api("POST", "/api/local/auth/login", { key: uuid(), body: { usuario: "admin.tienda", password: PASSWORD } });
   check("admin.tienda login local → 200", at.status === 200, JSON.stringify(at.body).slice(0, 300));
   // HU-06 + INVENTARIO_GESTIONAR (HU-02), AUDITORIA_CONSULTAR (HU-07) y REPORTE_TIENDA_VER (HU-05).
-  const esperados = ["AUDITORIA_CONSULTAR", "CAJA_CERRAR", "EMPLEADO_GESTIONAR", "FACTURA_ANULAR", "INVENTARIO_CONSULTAR", "INVENTARIO_GESTIONAR", "PRECIO_GESTIONAR", "REPORTE_TIENDA_VER", "VENTA_REGISTRAR"];
+  const esperados = ["AUDITORIA_CONSULTAR", "CAJA_CERRAR", "EMPLEADO_GESTIONAR", "FACTURA_ANULAR", "INVENTARIO_CONSULTAR", "INVENTARIO_GESTIONAR", "PRECIO_GESTIONAR", "PROVEEDOR_GESTIONAR", "REPORTE_TIENDA_VER", "VENTA_REGISTRAR"];
   const permisos = (at.body?.permisos || []).slice().sort();
   check(`admin.tienda tiene exactamente sus ${esperados.length} permisos`, JSON.stringify(permisos) === JSON.stringify(esperados), permisos.join(","));
   const tok = at.body?.token;
