@@ -12,6 +12,7 @@ import InventarioAlertas from "./InventarioAlertas.jsx";
 import RecetasEmitidas from "./RecetasEmitidas.jsx";
 import Reportes from "./Reportes.jsx";
 import ReportesRed from "./ReportesRed.jsx";
+import VistaRed from "./VistaRed.jsx";
 
 const CUENTAS = [
   { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
@@ -39,10 +40,10 @@ const AMBITO = {
 };
 
 // Módulos con pantalla propia, por nodo; el resto muestra la tarjeta del módulo.
-// Local: HU-01 y HU-02 (inventario del POS), HU-08 y HU-12 (caja y recetas), HU-10 (anulaciones), HU-05 (reportes). Central: HU-15 (tiendas de la red), HU-05 (comparativo). Ambos: HU-07 y HU-03.
+// Local: HU-01 y HU-02 (inventario del POS), HU-08 y HU-12 (caja y recetas), HU-10 (anulaciones), HU-05 (reportes). Central: HU-15 (tiendas de la red), HU-05 (comparativo), HU-16 (vista de red). Ambos: HU-07 y HU-03.
 const PANTALLAS = {
   local: { INVENTARIO_CONSULTAR: InventarioAlertas, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, VENTA_REGISTRAR: Caja, FACTURA_ANULAR: Anulaciones, REPORTE_TIENDA_VER: Reportes },
-  central: { RED_CONTROL: RecetasEmitidas, TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, REPORTE_CONSOLIDADO_VER: ReportesRed },
+  central: { RED_CONTROL: RecetasEmitidas, TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, REPORTE_CONSOLIDADO_VER: ReportesRed, RED_VISIBILIDAD: VistaRed },
 };
 
 export default function App() {

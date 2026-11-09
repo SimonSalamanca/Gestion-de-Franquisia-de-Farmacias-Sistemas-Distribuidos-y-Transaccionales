@@ -4,6 +4,7 @@ import { fechaCorta, fechaHora, pesos } from "./inventarioUi.jsx";
 import { BarrasH, Indicador } from "./graficos.jsx";
 import { dinero, entero, exportarExcel, nombreArchivo, porcentaje } from "./exportar.js";
 import { Exportar, Periodo } from "./Reportes.jsx";
+import { Frescura } from "./VistaRed.jsx";
 
 // HU-05: comparativo entre tiendas (criterio 3), en la consola del central. Sale de lo consolidado: puede ir unos
 // minutos atrasado (RNF-13), por eso cada tienda muestra la hora de su última sincronización.
@@ -42,11 +43,12 @@ export default function ReportesRed({ session }) {
     return exportarExcel(nombreArchivo("comparativo-red", p), [
       {
         nombre: "Comparativo",
-        columnas: ["Tienda", "Ciudad", "Ingresos netos", "Facturas", "Ticket promedio", "Participación", "Agotados", "Bajo mínimo", "Sin reporte", "Última sync ventas", "Última sync stock"],
-        anchos: [26, 16, 16, 10, 16, 13, 10, 12, 12, 20, 20],
+        columnas: ["Tienda", "Ciudad", "Información", "Ingresos netos", "Facturas", "Ticket promedio", "Participación", "Agotados", "Bajo mínimo", "Sin reporte", "Última sync ventas", "Última sync stock"],
+        anchos: [26, 16, 16, 16, 10, 16, 13, 10, 12, 12, 20, 20],
         filas: datos.tiendas.map((t) => [
           t.nombre,
           t.ciudad,
+          { AL_DIA: "Al día", DESACTUALIZADA: "Desactualizada", SIN_DATOS: "Sin datos" }[t.frescura.estado],
           dinero(t.ingresos),
           entero(t.facturas),
           dinero(t.ticket_promedio),
@@ -150,7 +152,7 @@ export default function ReportesRed({ session }) {
                 <tbody>
                   {datos.tiendas.map((x) => (
                     <tr key={x.id_tienda}>
-                      <td><strong>{x.nombre}</strong><div className="muted">{x.ciudad}</div></td>
+                      <td><strong>{x.nombre}</strong><div className="muted">{x.ciudad}</div><Frescura frescura={x.frescura} /></td>
                       {x.sin_datos ? (
                         <td colSpan="4" className="muted">Sin datos consolidados</td>
                       ) : (

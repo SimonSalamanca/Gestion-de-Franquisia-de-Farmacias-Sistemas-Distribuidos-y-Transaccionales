@@ -11,18 +11,37 @@ async function stockSnapshot(client, idTienda, event) {
   );
   if (inbox.rowCount === 0) return; // duplicado
   const { calculado_en: calculadoEn, items = [] } = event.payload;
-  for (const item of items) {
-    // Una foto vieja que llega tarde no pisa una más nueva.
-    await client.query(
-      `insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
-       values ($1, $2, $3, $4)
-       on conflict (id_tienda, id_medicamento) do update
-       set cantidad_disponible = excluded.cantidad_disponible,
-           fecha_sincronizacion = excluded.fecha_sincronizacion
-       where inventario_consolidado.fecha_sincronizacion <= excluded.fecha_sincronizacion`,
-      [idTienda, item.id_medicamento, item.cantidad, calculadoEn],
-    );
-  }
+  if (items.length === 0) return;
+  // Una sola sentencia para toda la foto (HU-16: la completa trae todos los medicamentos y con Neon cada ida y vuelta
+  // cuesta ~130 ms). Una foto vieja que llega tarde no pisa una más nueva.
+  await client.query(
+    `insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
+     select distinct on (i.id_medicamento) $1, i.id_medicamento, i.cantidad, $2::timestamp
+     from jsonb_to_recordset($3::jsonb) as i(id_medicamento int, cantidad int)
+     order by i.id_medicamento
+     on conflict (id_tienda, id_medicamento) do update
+     set cantidad_disponible = excluded.cantidad_disponible,
+         fecha_sincronizacion = excluded.fecha_sincronizacion
+     where inventario_consolidado.fecha_sincronizacion <= excluded.fecha_sincronizacion`,
+    [idTienda, calculadoEn, JSON.stringify(items)],
+  );
+}
+
+// HU-16: ventas por categoría (signo 1 en una venta, -1 en una devolución). Los eventos anteriores a HU-16 no traen
+// `categorias` y solo alimentan venta_consolidada.
+async function sumarCategorias(client, idTienda, fecha, categorias, signo) {
+  if (!Array.isArray(categorias) || categorias.length === 0) return;
+  await client.query(
+    `insert into venta_categoria_consolidada (id_tienda, fecha, id_categoria, unidades, ingresos, fecha_sincronizacion)
+     select $1, $2::date, c.id_categoria, $4::int * sum(c.unidades)::int, $4::int * sum(c.ingresos), now()
+     from jsonb_to_recordset($3::jsonb) as c(id_categoria int, unidades int, ingresos numeric)
+     group by c.id_categoria
+     on conflict (id_tienda, fecha, id_categoria) do update
+     set unidades = venta_categoria_consolidada.unidades + excluded.unidades,
+         ingresos = venta_categoria_consolidada.ingresos + excluded.ingresos,
+         fecha_sincronizacion = now()`,
+    [idTienda, fecha, JSON.stringify(categorias.map((c) => ({ ...c, id_categoria: c.id_categoria ?? 0 }))), signo],
+  );
 }
 
 // HU-06: FAIL / SUCCESS / EXPIRADO se pliegan en fold_evento (estado canónico de bloqueo).
@@ -62,6 +81,7 @@ async function ventaRegistrada(client, idTienda, event) {
       [idTienda, fecha, pago.id_metodo_pago, pago.monto],
     );
   }
+  await sumarCategorias(client, idTienda, fecha, event.payload.categorias, 1);
 }
 
 // HU-10: una anulación o devolución resta el valor reintegrado del consolidado por tienda, día y método de pago. Se
@@ -85,6 +105,7 @@ async function devolucionRegistrada(client, idTienda, event) {
       [idTienda, fecha, pago.id_metodo_pago, pago.monto],
     );
   }
+  await sumarCategorias(client, idTienda, fecha, event.payload.categorias, -1);
 }
 
 const APLICADORES = {

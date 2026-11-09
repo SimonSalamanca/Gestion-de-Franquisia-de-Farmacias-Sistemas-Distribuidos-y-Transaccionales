@@ -22,7 +22,7 @@ Como empleado de tienda, quiero recibir alertas automáticas cuando el stock de 
 2. **"Eliminar" los que no cumplen = darlos de baja.** Un medicamento no se puede borrar de la base: las facturas, recetas y movimientos que lo referencian son inmutables. `npm run db:depurar-umbrales` lista los productos activos sin umbral; con `-- --aplicar` los da de baja (`activo = false`), se publica a las tiendas y queda en la auditoría (`MEDICAMENTO_BAJA_SIN_UMBRAL`). Los que todavía tienen unidades en la red solo se dan de baja con `--incluir-con-stock`, porque dejan de venderse. Es una acción explícita: no corre sola al arrancar, para no dar de baja productos reales de producción por sorpresa.
 3. **Una tienda nueva recibe sus umbrales.** `crearTienda` (HU-15) crea un umbral por cada medicamento activo con valores iniciales (mínimo 10, aviso 30 días) y los publica; luego se ajustan en "Tiendas > Umbrales". Los medicamentos demo reciben los suyos al sembrarse.
 4. **Defensa en profundidad.** Si por un atraso de réplica o un dato heredado un producto activo llega sin umbral a una tienda, el panel muestra una alerta `SIN_UMBRAL` (alta), y sus lotes igual avisan la caducidad con un aviso de 30 días.
-5. **Sin permisos nuevos.** Ven las alertas quienes pueden consultar el inventario (`INVENTARIO_CONSULTAR`, también el cajero): HU-06 exige que el cajero tenga exactamente dos permisos. Los umbrales los configura el administrador general en la consola, como en HU-15.
+5. **Sin permisos nuevos.** Ven las alertas quienes pueden consultar el inventario (`INVENTARIO_CONSULTAR`, también el cajero): HU-06 fija los permisos del cajero (hoy tres, con `FACTURA_ANULAR` de HU-10). Los umbrales los configura el administrador general en la consola, como en HU-15.
 6. **Stock bajo = igual o menor que el mínimo**, la misma regla que HU-01 usa para marcar "bajo".
 
 ## Reglas de las alertas
@@ -174,7 +174,7 @@ Hallazgos corregidos en el camino:
 
 ## Pendiente para otras historias
 
-- **HU-16:** vista de alertas de toda la red en el central (hoy cada tienda ve las suyas).
+- **Alertas de toda la red en el central:** HU-16 (vista de red, 2026-11-09) muestra por tienda los productos agotados y bajo el mínimo con la hora de su información, pero no el panel de alertas ni la caducidad por lote, porque el central no tiene las fechas de los lotes. Queda para otra historia.
 - **HU-13:** crear un pedido a proveedor desde una alerta.
 - **Notificación fuera de la pantalla** (correo o push): hoy es el panel y el indicador, que se refrescan solos.
 
