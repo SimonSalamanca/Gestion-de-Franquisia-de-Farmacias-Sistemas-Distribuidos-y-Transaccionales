@@ -13,9 +13,9 @@ export default function InventarioAlertas({ session, ultimaSync, pedido }) {
     <article className="inventario">
       <header className="inv-cabecera">
         <h2>Inventario</h2>
-        <div className="row">
-          <button className={pestana === "existencias" ? "primary" : "ghost"} onClick={() => setPestana("existencias")}>Existencias</button>
-          <button className={pestana === "alertas" ? "primary" : "ghost"} onClick={() => setPestana("alertas")}>Alertas</button>
+        <div className="pestanas" role="tablist">
+          <button role="tab" aria-selected={pestana === "existencias"} className={pestana === "existencias" ? "active" : ""} onClick={() => setPestana("existencias")}>Existencias</button>
+          <button role="tab" aria-selected={pestana === "alertas"} className={pestana === "alertas" ? "active" : ""} onClick={() => setPestana("alertas")}>Alertas</button>
         </div>
       </header>
       <div hidden={pestana !== "existencias"}><Inventario session={session} ultimaSync={ultimaSync} incrustada /></div>

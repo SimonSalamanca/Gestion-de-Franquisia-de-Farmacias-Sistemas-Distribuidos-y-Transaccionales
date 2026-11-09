@@ -11,10 +11,10 @@ export default function Caja({ session }) {
     <article className="inventario">
       <header className="inv-cabecera">
         <h2>Ventas y recetas</h2>
-        <div className="row">
-          <button className={pestana === "venta" ? "primary" : "ghost"} onClick={() => setPestana("venta")}>Venta</button>
-          <button className={pestana === "recetas" ? "primary" : "ghost"} onClick={() => setPestana("recetas")}>Recetas</button>
-          <button className={pestana === "historial" ? "primary" : "ghost"} onClick={() => setPestana("historial")}>Historial</button>
+        <div className="pestanas" role="tablist">
+          <button role="tab" aria-selected={pestana === "venta"} className={pestana === "venta" ? "active" : ""} onClick={() => setPestana("venta")}>Venta</button>
+          <button role="tab" aria-selected={pestana === "recetas"} className={pestana === "recetas" ? "active" : ""} onClick={() => setPestana("recetas")}>Recetas</button>
+          <button role="tab" aria-selected={pestana === "historial"} className={pestana === "historial" ? "active" : ""} onClick={() => setPestana("historial")}>Historial</button>
         </div>
       </header>
       <div hidden={pestana !== "venta"}><Ventas session={session} /></div>

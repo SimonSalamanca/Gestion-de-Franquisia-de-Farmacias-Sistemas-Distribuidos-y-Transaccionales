@@ -25,7 +25,7 @@ export function Indicadores({ medicamento }) {
   if (!medicamento.requiere_refrigeracion && !medicamento.requiere_receta) return null;
   return (
     <span className="indicadores">
-      {medicamento.requiere_refrigeracion && <span className="badge frio">❄ Refrigeración 2–8 °C</span>}
+      {medicamento.requiere_refrigeracion && <span className="badge frio">Refrigeración 2–8 °C</span>}
       {medicamento.requiere_receta && <span className="badge receta">℞ Requiere receta</span>}
     </span>
   );
