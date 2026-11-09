@@ -114,8 +114,9 @@ await paso("CA2/CA3 login cajero e idempotencia", async () => {
   check("login local cajero1 → 200", l1.status === 200, JSON.stringify(l1.body).slice(0, 300));
   const permisos = (l1.body?.permisos || []).slice().sort();
   check(
-    "CA3 · cajero solo tiene INVENTARIO_CONSULTAR y VENTA_REGISTRAR",
-    JSON.stringify(permisos) === JSON.stringify(["INVENTARIO_CONSULTAR", "VENTA_REGISTRAR"]),
+    "CA3 · cajero solo tiene INVENTARIO_CONSULTAR, VENTA_REGISTRAR y FACTURA_ANULAR (HU-10)",
+    // HU-06 + HU-10 (FACTURA_ANULAR, db/central/10_hu10_permiso_cajero.sql).
+    JSON.stringify(permisos) === JSON.stringify(["FACTURA_ANULAR", "INVENTARIO_CONSULTAR", "VENTA_REGISTRAR"]),
     permisos.join(","),
   );
   check(
@@ -180,9 +181,10 @@ await paso("cierre de sesión", async () => {
 await paso("CA3 admin de tienda", async () => {
   const at = await api("POST", "/api/local/auth/login", { key: uuid(), body: { usuario: "admin.tienda", password: PASSWORD } });
   check("admin.tienda login local → 200", at.status === 200, JSON.stringify(at.body).slice(0, 300));
-  const esperados = ["CAJA_CERRAR", "EMPLEADO_GESTIONAR", "FACTURA_ANULAR", "INVENTARIO_CONSULTAR", "PRECIO_GESTIONAR", "VENTA_REGISTRAR"];
+  // HU-06 + INVENTARIO_GESTIONAR (HU-02), AUDITORIA_CONSULTAR (HU-07) y REPORTE_TIENDA_VER (HU-05).
+  const esperados = ["AUDITORIA_CONSULTAR", "CAJA_CERRAR", "EMPLEADO_GESTIONAR", "FACTURA_ANULAR", "INVENTARIO_CONSULTAR", "INVENTARIO_GESTIONAR", "PRECIO_GESTIONAR", "REPORTE_TIENDA_VER", "VENTA_REGISTRAR"];
   const permisos = (at.body?.permisos || []).slice().sort();
-  check("admin.tienda tiene exactamente sus 6 permisos", JSON.stringify(permisos) === JSON.stringify(esperados), permisos.join(","));
+  check(`admin.tienda tiene exactamente sus ${esperados.length} permisos`, JSON.stringify(permisos) === JSON.stringify(esperados), permisos.join(","));
   const tok = at.body?.token;
   const caja = await api("GET", "/api/local/modulos/CAJA_CERRAR", { token: tok });
   check("admin.tienda abre cierre de caja → 200", caja.status === 200);

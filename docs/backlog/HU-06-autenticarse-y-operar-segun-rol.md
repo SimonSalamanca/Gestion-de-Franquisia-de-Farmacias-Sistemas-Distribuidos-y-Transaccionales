@@ -43,9 +43,11 @@ No se renombran los roles ya sembrados.
 
 | Rol en `rol.nombre` | Códigos |
 | --- | --- |
-| cajero | INVENTARIO_CONSULTAR, VENTA_REGISTRAR |
-| administrador_tienda | los del cajero + EMPLEADO_GESTIONAR, PRECIO_GESTIONAR, CAJA_CERRAR, FACTURA_ANULAR |
-| administrador_general | los del admin de tienda + RED_VISIBILIDAD, RED_CONTROL, TIENDA_GESTIONAR, REPORTE_CONSOLIDADO_VER |
+| cajero | INVENTARIO_CONSULTAR, VENTA_REGISTRAR, FACTURA_ANULAR (HU-10) |
+| administrador_tienda | los del cajero + EMPLEADO_GESTIONAR, PRECIO_GESTIONAR, CAJA_CERRAR, INVENTARIO_GESTIONAR (HU-02), AUDITORIA_CONSULTAR (HU-07), REPORTE_TIENDA_VER (HU-05) |
+| administrador_general | los del admin de tienda + RED_VISIBILIDAD (pantalla "Vista de red", HU-16), RED_CONTROL, TIENDA_GESTIONAR, REPORTE_CONSOLIDADO_VER (HU-05) |
+
+Actualizado el 2026-11-09. Los permisos que agregó cada historia son datos: se insertan con su script en `db/central/` y se replican con `PERMISO_UPSERT` y `ROL_PERMISO_SET`. Las pruebas (`probar-hu06.mjs` y `hu06-pruebas.mjs`) verifican esta tabla.
 
 El chequeo es por `permiso.codigo`. Esos códigos caben en `varchar(60)`. Los nombres caben en `varchar(40)`.
 

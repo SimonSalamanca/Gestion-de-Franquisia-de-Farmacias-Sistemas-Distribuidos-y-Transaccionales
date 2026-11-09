@@ -257,8 +257,8 @@ No hubo acceso para crear una rama de Neon, así que todo se probó en el clon D
 | Interfaz en Chrome (cajero, admin de tienda, admin general, celular de 390 px, Excel descargado y abierto, PDF) | **25/25**, sin errores de JavaScript |
 | `db:verificar --estricto` | Sin diferencias en los dos nodos |
 | Regresión: `test:hu01` 39, `hu02` 38, `hu03` 44, `hu04` 64, `hu07` 63, `hu08` 85, `hu09` 49, `hu10` 65, `hu15` 47 | Todas en verde |
-| `test:hu06` | 36/37: falla "cajero permisos". La prueba espera que el cajero tenga 2 permisos, pero HU-10 le dio `FACTURA_ANULAR`. HU-05 no cambia al cajero; la prueba de HU-06 debe actualizarse (Simon) |
-| `test:hu12` | 129/132: `probar-hu12-central` usa fija la tienda 2 como "otra tienda", y en la copia de Neon esa tienda no existe (están la 1 y la 5). Es del entorno, no de HU-05 |
+| `test:hu06` | Falló "cajero permisos": la prueba esperaba 2 permisos y HU-10 le dio `FACTURA_ANULAR`. **Corregido el 2026-11-09** junto con HU-16: la prueba espera los 3 permisos y además verifica que el cajero no tenga los de administración ni los de reportes (38/38) |
+| `test:hu12` | Falló porque `probar-hu12-central` usaba fija la tienda 2 como "otra tienda". **Corregido el 2026-11-09:** toma la primera tienda activa distinta de la 1 (141/141) |
 
 - **Tiempos medidos en Docker local**, con latencia casi nula. En Neon cada ida y vuelta cuesta unos 130 ms. El reporte de la tienda hace la evaluación de alertas (una transacción corta) y luego las dos consultas en paralelo, así que en Neon se esperan unos 400–600 ms más. Sigue bajo la meta, pero hay que medirlo allá cuando la base esté al día.
 - **Cuadre comprobado en la interfaz:** la tienda y la red mostraron los mismos $ 286.036,94 netos para el mismo periodo.

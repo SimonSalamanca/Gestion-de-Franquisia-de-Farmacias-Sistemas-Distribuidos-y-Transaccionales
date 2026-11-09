@@ -12,7 +12,7 @@ if ([config.centralUrl, config.localUrl].some((url) => url.includes("neon.tech")
   process.exit(2);
 }
 
-const { central, local, withTx } = await import("../apps/api/db.mjs");
+const { central, local } = await import("../apps/api/db.mjs");
 const { migrate } = await import("../apps/api/migrate.mjs");
 const { link, pullReplica, flushOutbox } = await import("../apps/api/sync.mjs");
 const { crearServidor } = await import("../apps/api/app.mjs");
@@ -271,13 +271,26 @@ try {
   const recla = (await central.query("select estado, id_tienda_reclamo from receta_emitida where codigo = $1", [codigoReceta])).rows[0];
   check("el central dio de baja la receta vendida", recla.estado === "RECLAMADA" && recla.id_tienda_reclamo === TIENDA);
   check("el stock del controlado llegó al consolidado", Number((await central.query("select cantidad_disponible from inventario_consolidado where id_tienda = $1 and id_medicamento = $2", [TIENDA, idC])).rows[0]?.cantidad_disponible) === 18);
-  // Un evento repetido (reintento tras una caída) no suma dos veces.
+  // Un evento repetido (reintento tras una caída) no suma dos veces. Es un evento sin factura detrás: se prueba dentro de
+  // una transacción que se revierte, para no dejar en venta_consolidada una venta que no existe (los reportes de HU-05 y la
+  // vista de red de HU-16 la mostrarían).
   const evento = { idempotency_key: nuevaKey(), tipo_evento: "VENTA_REGISTRADA", payload: { fecha: "2026-01-02", total: "10.00", pagos: [{ id_metodo_pago: efectivo, monto: "10.00" }] } };
-  const antesEf = await consolidado(efectivo);
-  await withTx(central, (c) => aplicarEnCentral(c, TIENDA, evento));
-  await withTx(central, (c) => aplicarEnCentral(c, TIENDA, evento));
-  const despuesEf = await consolidado(efectivo);
-  check("un evento duplicado no suma dos veces en el central", centavos(despuesEf.total) - centavos(antesEf.total) === 1000 && despuesEf.facturas === antesEf.facturas + 1);
+  const leerEf = async (c) => (await c.query(
+    "select coalesce(sum(total_vendido), 0)::text as total, coalesce(sum(total_facturas), 0)::int as facturas from venta_consolidada where id_tienda = $1 and id_metodo_pago = $2",
+    [TIENDA, efectivo],
+  )).rows[0];
+  const cDup = await central.connect();
+  try {
+    await cDup.query("begin");
+    const antesEf = await leerEf(cDup);
+    await aplicarEnCentral(cDup, TIENDA, evento);
+    await aplicarEnCentral(cDup, TIENDA, evento);
+    const despuesEf = await leerEf(cDup);
+    check("un evento duplicado no suma dos veces en el central", centavos(despuesEf.total) - centavos(antesEf.total) === 1000 && despuesEf.facturas === antesEf.facturas + 1);
+  } finally {
+    await cDup.query("rollback");
+    cDup.release();
+  }
 
   // --- Garantía en la base: una factura incompleta no hace commit
   async function commitIncompleto(preparar) {
