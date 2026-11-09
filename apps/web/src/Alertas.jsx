@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.js";
 import { fechaCorta, fechaHora } from "./inventarioUi.jsx";
+import { SolicitudDeAlerta } from "./Solicitudes.jsx";
 
 // HU-04: panel único de alertas, de la más urgente a la menos (RF-03). Se calculan en la tienda: funciona sin conexión
 // con el central. Se refresca solo; un lote vencido ya está bloqueado para la venta cuando aparece aquí.
@@ -44,6 +45,9 @@ export default function Alertas({ session }) {
   const [tipo, setTipo] = useState("");
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
+  // HU-13: el administrador genera la solicitud de reabastecimiento desde una alerta de stock. Alerta abierta por id.
+  const puedeSolicitar = session.permisos.includes("PROVEEDOR_GESTIONAR");
+  const [solicitando, setSolicitando] = useState(null);
 
   const cargar = useCallback(async () => {
     const query = new URLSearchParams();
@@ -106,8 +110,14 @@ export default function Alertas({ session }) {
               </div>
               <div className="inv-stock">
                 {!a.vista_en && <button className="ghost" onClick={() => vista(a.id_alerta)}>Marcar como vista</button>}
+                {puedeSolicitar && (a.tipo === "STOCK_BAJO" || a.tipo === "STOCK_AGOTADO") && (
+                  <button className="ghost" onClick={() => setSolicitando(solicitando === a.id_alerta ? null : a.id_alerta)}>
+                    {solicitando === a.id_alerta ? "Ocultar" : "Generar solicitud"}
+                  </button>
+                )}
               </div>
             </div>
+            {solicitando === a.id_alerta && <SolicitudDeAlerta token={token} idAlerta={a.id_alerta} />}
           </li>
         ))}
       </ul>

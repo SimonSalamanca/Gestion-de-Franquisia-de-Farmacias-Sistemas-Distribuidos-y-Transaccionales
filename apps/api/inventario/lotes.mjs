@@ -147,22 +147,54 @@ export async function registrarLote(client, body, ctx) {
   return { ...(await detalleLote(client, resultado.id_lote)), nuevo: resultado.nuevo };
 }
 
-// RF-23 / Pedido.confirmarRecepcion(): todo o nada.
+// RF-23 / HU-14 / Pedido.confirmarRecepcion(): todo o nada, en una transacción.
+// Cada recepción es un documento (recepcion + detalle_recepcion) ligado al pedido original. Si lo recibido no coincide con lo
+// solicitado queda constancia (diferencia_recepcion):
+//   - sobrante: llega más de lo pendiente; exige `motivo_diferencia`;
+//   - faltante: `cerrar_con_diferencia: true` da por terminado el pedido aunque falten unidades; exige `motivo_diferencia`.
+// Sin ninguna de las dos, lo que falta sigue pendiente y el pedido queda RECIBIDO_PARCIAL.
+const MOTIVO_MIN = 5;
+const MOTIVO_MAX = 300;
+
+function motivoDe(valor) {
+  const motivo = String(valor ?? "").trim();
+  if (motivo.length > MOTIVO_MAX) throw invalido(`El motivo admite máximo ${MOTIVO_MAX} caracteres`, { campo: "motivo_diferencia" });
+  return motivo;
+}
+
+function exigirMotivo(motivo, mensaje) {
+  if (motivo.length < MOTIVO_MIN) throw invalido(mensaje, { campo: "motivo_diferencia", codigo: "MOTIVO_DIFERENCIA_OBLIGATORIO" });
+}
+
+function textoOpcional(valor, max, campo, etiqueta) {
+  const limpio = String(valor ?? "").trim();
+  if (limpio.length > max) throw invalido(`${etiqueta} admite máximo ${max} caracteres`, { campo });
+  return limpio || null;
+}
+
 export async function recibirPedido(client, idPedido, body, ctx) {
   const lineas = Array.isArray(body?.lineas) ? body.lineas : [];
   if (lineas.length === 0) throw invalido("La recepción debe tener al menos una línea");
+  const motivo = motivoDe(body?.motivo_diferencia);
+  const cerrar = body?.cerrar_con_diferencia === true;
+  const documento = textoOpcional(body?.documento_proveedor, 60, "documento_proveedor", "El documento del proveedor");
+  const observaciones = textoOpcional(body?.observaciones, 300, "observaciones", "Las observaciones");
 
   const pedido = await client.query("select * from pedido where id_pedido = $1 for update", [idPedido]);
   if (pedido.rowCount === 0) throw noEncontrado(`El pedido ${idPedido} no existe`);
   const { estado, id_proveedor: idProveedor } = pedido.rows[0];
-  if (!["SOLICITADO", "RECIBIDO_PARCIAL"].includes(estado)) {
+  // HU-13: una solicitud pendiente o ya marcada como enviada se puede recibir (la recepción no exige el paso "enviada").
+  if (!["SOLICITADO", "ENVIADO", "RECIBIDO_PARCIAL"].includes(estado)) {
     throw conflicto("PEDIDO_CERRADO", `El pedido está ${estado} y no admite recepciones`);
   }
 
   const detalle = await client.query(
-    "select id_medicamento, cantidad_solicitada, cantidad_recibida from detalle_pedido where id_pedido = $1 for update",
+    `select d.id_medicamento, m.nombre_comercial, d.cantidad_solicitada, d.cantidad_recibida
+     from detalle_pedido d join medicamento_ref m on m.id_medicamento = d.id_medicamento
+     where d.id_pedido = $1 for update of d`,
     [idPedido],
   );
+  const filas = new Map(detalle.rows.map((row) => [row.id_medicamento, row]));
   const pendiente = new Map(detalle.rows.map((row) => [row.id_medicamento, row.cantidad_solicitada - row.cantidad_recibida]));
 
   // Validar todas las líneas antes de escribir nada: formato y pedido en el API, y una sola consulta a la base.
@@ -182,22 +214,43 @@ export async function recibirPedido(client, idPedido, body, ctx) {
       throw invalido(`Línea ${indice + 1}: el medicamento no está en este pedido`, { linea: indice + 1 });
     }
     const resta = pendiente.get(datos.idMedicamento) - datos.cantidad;
-    if (resta < 0) {
-      throw invalido(`Línea ${indice + 1}: se reciben más unidades de las pendientes (${pendiente.get(datos.idMedicamento)})`, {
-        linea: indice + 1,
-        pendiente: pendiente.get(datos.idMedicamento),
-      });
+    // Recibir más de lo pendiente es posible, pero deja un sobrante que necesita su constancia (criterio 4 de HU-14).
+    if (resta < 0 && motivo.length < MOTIVO_MIN) {
+      throw invalido(
+        `Línea ${indice + 1}: se reciben más unidades de las pendientes (${pendiente.get(datos.idMedicamento)}). Para registrar el sobrante indique el motivo de la diferencia`,
+        { linea: indice + 1, pendiente: pendiente.get(datos.idMedicamento), campo: "motivo_diferencia" },
+      );
     }
     pendiente.set(datos.idMedicamento, resta);
     validadas.push(datos);
   }
   await verificarLotesEnBase(client, validadas, { alError: conLinea });
 
+  // Lo que queda por medicamento tras esta recepción: resta > 0 falta, < 0 sobra.
+  const tocados = new Set(validadas.map((datos) => datos.idMedicamento));
+  const sobrantes = [...pendiente.entries()].filter(([id, resta]) => resta < 0 && tocados.has(id));
+  const faltantes = [...pendiente.entries()].filter(([, resta]) => resta > 0);
+  if (cerrar) exigirMotivo(motivo, "Para cerrar el pedido con unidades faltantes indique el motivo de la diferencia (mínimo 5 caracteres)");
+  if (cerrar && faltantes.length === 0 && sobrantes.length === 0) {
+    throw invalido("No hay diferencia que registrar: la recepción completa el pedido", { campo: "cerrar_con_diferencia" });
+  }
+
+  const recepcion = await client.query(
+    `insert into recepcion (id_pedido, id_empleado, documento_proveedor, observaciones)
+     values ($1, $2, $3, $4) returning id_recepcion, fecha_hora`,
+    [idPedido, ctx.idEmpleado, documento, observaciones],
+  );
+  const { id_recepcion: idRecepcion } = recepcion.rows[0];
+
   const referencia = `PEDIDO-${idPedido}`;
   const lotes = [];
   for (const datos of validadas) {
     const resultado = await entradaEnLote(client, datos, { ...ctx, referencia, publicarStock: false });
     lotes.push(resultado.id_lote);
+    await client.query(
+      `insert into detalle_recepcion (id_recepcion, id_medicamento, id_lote, id_proveedor, cantidad) values ($1, $2, $3, $4, $5)`,
+      [idRecepcion, datos.idMedicamento, resultado.id_lote, idProveedor, datos.cantidad],
+    );
   }
   // Cantidades recibidas de todas las líneas en una sola sentencia (varias líneas pueden ser del mismo medicamento).
   await client.query(
@@ -208,12 +261,123 @@ export async function recibirPedido(client, idPedido, body, ctx) {
      where d.id_pedido = $1 and d.id_medicamento = r.id_medicamento`,
     [idPedido, validadas.map((datos) => datos.idMedicamento), validadas.map((datos) => datos.cantidad)],
   );
-  const completo = [...pendiente.values()].every((valor) => valor === 0);
-  const nuevoEstado = completo ? "RECIBIDO_TOTAL" : "RECIBIDO_PARCIAL";
-  await client.query("update pedido set estado = $2, fecha_recepcion = now() where id_pedido = $1", [idPedido, nuevoEstado]);
+
+  // Constancia de las diferencias: lo solicitado y lo recibido acumulado en este instante, con el motivo.
+  const diferencias = [];
+  const constancia = async (idMedicamento, tipo) => {
+    const fila = filas.get(idMedicamento);
+    const recibida = fila.cantidad_solicitada - pendiente.get(idMedicamento);
+    const guardada = await client.query(
+      `insert into diferencia_recepcion (id_pedido, id_recepcion, id_medicamento, tipo, cantidad_solicitada, cantidad_recibida, diferencia, motivo, id_empleado)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       returning id_diferencia, tipo, cantidad_solicitada, cantidad_recibida, diferencia`,
+      [idPedido, idRecepcion, idMedicamento, tipo, fila.cantidad_solicitada, recibida, recibida - fila.cantidad_solicitada, motivo, ctx.idEmpleado],
+    );
+    diferencias.push({ ...guardada.rows[0], id_medicamento: idMedicamento, nombre_comercial: fila.nombre_comercial, motivo });
+  };
+  for (const [idMedicamento] of sobrantes) await constancia(idMedicamento, "SOBRANTE");
+  if (cerrar) for (const [idMedicamento] of faltantes) await constancia(idMedicamento, "FALTANTE");
+
+  const completo = faltantes.length === 0;
+  const nuevoEstado = completo || cerrar ? "RECIBIDO_TOTAL" : "RECIBIDO_PARCIAL";
+  await client.query(
+    "update pedido set estado = $2, fecha_recepcion = now(), con_diferencia = (con_diferencia or $3::boolean) where id_pedido = $1",
+    [idPedido, nuevoEstado, diferencias.length > 0],
+  );
   await encolarStockSnapshot(client, { idTienda: ctx.idTienda, idsMedicamento: validadas.map((datos) => datos.idMedicamento) });
-  await auditar(client, ctx.idEmpleado, "PEDIDO_RECIBIR", "pedido", idPedido, `${validadas.length} línea(s); estado ${nuevoEstado}`);
-  return { id_pedido: idPedido, estado: nuevoEstado, lotes };
+  await auditar(
+    client,
+    ctx.idEmpleado,
+    "PEDIDO_RECIBIR",
+    "pedido",
+    idPedido,
+    `recepción ${idRecepcion}; ${validadas.length} línea(s); estado ${nuevoEstado}${documento ? `; documento ${documento}` : ""}`,
+  );
+  if (diferencias.length > 0) {
+    const resumen = diferencias.map((d) => `${d.nombre_comercial} ${d.diferencia > 0 ? "+" : ""}${d.diferencia}`).join(", ");
+    await auditar(client, ctx.idEmpleado, "RECEPCION_DIFERENCIA", "pedido", idPedido, `recepción ${idRecepcion}: ${resumen}. Motivo: ${motivo}`);
+  }
+  return {
+    id_pedido: idPedido,
+    id_recepcion: idRecepcion,
+    estado: nuevoEstado,
+    fecha_hora: recepcion.rows[0].fecha_hora,
+    lotes,
+    con_diferencia: diferencias.length > 0,
+    diferencias,
+  };
+}
+
+// HU-14, criterio 4: el proveedor avisa que no entregará el resto. Se da por terminado un pedido recibido en parte,
+// sin unidades nuevas, dejando constancia del faltante con su motivo. Pendiente -> recibida con diferencia.
+export async function cerrarPedidoConDiferencia(client, idPedido, body, ctx) {
+  const motivo = motivoDe(body?.motivo_diferencia);
+  exigirMotivo(motivo, "Indique el motivo de la diferencia (mínimo 5 caracteres)");
+  const pedido = await client.query("select estado from pedido where id_pedido = $1 for update", [idPedido]);
+  if (pedido.rowCount === 0) throw noEncontrado(`El pedido ${idPedido} no existe`);
+  if (pedido.rows[0].estado !== "RECIBIDO_PARCIAL") {
+    throw conflicto("TRANSICION_INVALIDA", "Solo se cierra con diferencia un pedido recibido en parte; uno sin recibir se cancela", { estado: pedido.rows[0].estado });
+  }
+  const faltantes = await client.query(
+    `select d.id_medicamento, m.nombre_comercial, d.cantidad_solicitada, d.cantidad_recibida
+     from detalle_pedido d join medicamento_ref m on m.id_medicamento = d.id_medicamento
+     where d.id_pedido = $1 and d.cantidad_recibida < d.cantidad_solicitada order by m.nombre_comercial`,
+    [idPedido],
+  );
+  if (faltantes.rowCount === 0) throw conflicto("SIN_DIFERENCIA", "No hay unidades pendientes: el pedido no tiene diferencia que registrar");
+  const diferencias = [];
+  for (const f of faltantes.rows) {
+    const guardada = await client.query(
+      `insert into diferencia_recepcion (id_pedido, id_recepcion, id_medicamento, tipo, cantidad_solicitada, cantidad_recibida, diferencia, motivo, id_empleado)
+       values ($1, null, $2, 'FALTANTE', $3, $4, $5, $6, $7)
+       returning id_diferencia, tipo, cantidad_solicitada, cantidad_recibida, diferencia`,
+      [idPedido, f.id_medicamento, f.cantidad_solicitada, f.cantidad_recibida, f.cantidad_recibida - f.cantidad_solicitada, motivo, ctx.idEmpleado],
+    );
+    diferencias.push({ ...guardada.rows[0], id_medicamento: f.id_medicamento, nombre_comercial: f.nombre_comercial, motivo });
+  }
+  await client.query("update pedido set estado = 'RECIBIDO_TOTAL', con_diferencia = true where id_pedido = $1", [idPedido]);
+  const resumen = diferencias.map((d) => `${d.nombre_comercial} ${d.diferencia}`).join(", ");
+  await auditar(client, ctx.idEmpleado, "PEDIDO_CERRAR_DIFERENCIA", "pedido", idPedido, `faltante: ${resumen}. Motivo: ${motivo}`);
+  return { id_pedido: idPedido, estado: "RECIBIDO_TOTAL", con_diferencia: true, diferencias };
+}
+
+// HU-14, criterio 3: las recepciones de una solicitud con sus lotes y proveedor, quién las hizo y cuándo, y las
+// diferencias de las que quedó constancia. db: la base local.
+export async function listarRecepciones(db, idPedido) {
+  const pedido = await db.query(
+    `select p.id_pedido, p.estado, p.con_diferencia, p.id_proveedor, pr.nombre_empresa as proveedor
+     from pedido p join proveedor_ref pr on pr.id_proveedor = p.id_proveedor where p.id_pedido = $1`,
+    [idPedido],
+  );
+  if (pedido.rowCount === 0) throw noEncontrado(`El pedido ${idPedido} no existe`);
+  const recepciones = await db.query(
+    `select r.id_recepcion, r.fecha_hora, r.documento_proveedor, r.observaciones, e.nombre_completo as responsable, e.usuario,
+            coalesce(json_agg(json_build_object(
+              'id_medicamento', d.id_medicamento, 'nombre_comercial', m.nombre_comercial, 'id_lote', d.id_lote,
+              'numero_lote', l.numero_lote, 'fecha_caducidad', l.fecha_caducidad, 'cantidad', d.cantidad,
+              'id_proveedor', d.id_proveedor
+            ) order by m.nombre_comercial, d.id_detalle) filter (where d.id_detalle is not null), '[]') as lineas
+     from recepcion r
+     join empleado_ref e on e.id_empleado = r.id_empleado
+     left join detalle_recepcion d on d.id_recepcion = r.id_recepcion
+     left join medicamento_ref m on m.id_medicamento = d.id_medicamento
+     left join lote l on l.id_lote = d.id_lote
+     where r.id_pedido = $1
+     group by r.id_recepcion, e.nombre_completo, e.usuario
+     order by r.fecha_hora, r.id_recepcion`,
+    [idPedido],
+  );
+  const diferencias = await db.query(
+    `select f.id_diferencia, f.id_recepcion, f.id_medicamento, m.nombre_comercial, f.tipo, f.cantidad_solicitada,
+            f.cantidad_recibida, f.diferencia, f.motivo, f.fecha_hora, e.nombre_completo as responsable
+     from diferencia_recepcion f
+     join medicamento_ref m on m.id_medicamento = f.id_medicamento
+     join empleado_ref e on e.id_empleado = f.id_empleado
+     where f.id_pedido = $1
+     order by f.fecha_hora, f.id_diferencia`,
+    [idPedido],
+  );
+  return { ...pedido.rows[0], recepciones: recepciones.rows, diferencias: diferencias.rows };
 }
 
 export async function ajustarLote(client, idLote, body, ctx) {
@@ -286,9 +450,11 @@ export async function historialLote(client, idLote) {
   const lote = await detalleLote(client, idLote);
   const movimientos = await client.query(
     `select mi.id_movimiento, mi.tipo_movimiento, mi.sentido, mi.cantidad, mi.fecha_hora,
-            mi.referencia_documento, mi.observaciones, mi.id_empleado, e.nombre_completo as empleado, e.usuario
+            mi.referencia_documento, mi.observaciones, mi.id_empleado,
+            -- HU-17: el paso de un traslado lo hace el sistema (sin responsable en esta tienda).
+            coalesce(e.nombre_completo, 'Sistema (traslado)') as empleado, e.usuario
      from movimiento_inventario mi
-     join empleado_ref e on e.id_empleado = mi.id_empleado
+     left join empleado_ref e on e.id_empleado = mi.id_empleado
      where mi.id_lote = $1
      order by mi.fecha_hora, mi.id_movimiento`,
     [idLote],
@@ -324,7 +490,7 @@ export async function listarProveedores(client) {
 
 export async function listarPedidosPendientes(client) {
   const result = await client.query(
-    `select p.id_pedido, p.estado, p.fecha_solicitud, p.origen_solicitud, p.id_proveedor, pr.nombre_empresa as proveedor,
+    `select p.id_pedido, p.estado, p.fecha_solicitud, p.origen_solicitud, p.id_proveedor, p.con_diferencia, pr.nombre_empresa as proveedor,
             coalesce(json_agg(json_build_object(
               'id_medicamento', d.id_medicamento,
               'nombre_comercial', m.nombre_comercial,
@@ -336,7 +502,7 @@ export async function listarPedidosPendientes(client) {
      join proveedor_ref pr on pr.id_proveedor = p.id_proveedor
      left join detalle_pedido d on d.id_pedido = p.id_pedido
      left join medicamento_ref m on m.id_medicamento = d.id_medicamento
-     where p.estado in ('SOLICITADO', 'RECIBIDO_PARCIAL')
+     where p.estado in ('SOLICITADO', 'ENVIADO', 'RECIBIDO_PARCIAL')
      group by p.id_pedido, pr.nombre_empresa
      order by p.fecha_solicitud`,
   );

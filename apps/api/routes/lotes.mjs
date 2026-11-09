@@ -4,11 +4,12 @@ import { autorizar } from "../auth.mjs";
 import { conIdempotencia } from "../idempotencia.mjs";
 import {
   ajustarLote,
+  cerrarPedidoConDiferencia,
   detalleMedicamento,
   historialLote,
   listarLotes,
   listarPedidosPendientes,
-  listarProveedores,
+  listarRecepciones,
   recibirPedido,
   registrarLote,
 } from "../inventario/lotes.mjs";
@@ -43,6 +44,17 @@ export default function lotes(router) {
     escribir(req, res, `PEDIDO_RECIBIR:${params[0]}`, 200, (client, body, ctx) => recibirPedido(client, Number(params[0]), body, ctx)),
   );
 
+  // HU-14: dar por terminado un pedido recibido en parte (el proveedor no entregará el resto), con constancia del faltante.
+  router.post(/^\/api\/local\/pedidos\/(\d+)\/cierre$/, (req, res, { params }) =>
+    escribir(req, res, `PEDIDO_CERRAR:${params[0]}`, 200, (client, body, ctx) => cerrarPedidoConDiferencia(client, Number(params[0]), body, ctx)),
+  );
+
+  // HU-14: las recepciones de un pedido (lotes, responsable, fecha) y las diferencias de las que quedó constancia.
+  router.get(/^\/api\/local\/pedidos\/(\d+)\/recepciones$/, async (req, res, { params }) => {
+    await sesionCon(req, "INVENTARIO_GESTIONAR");
+    return send(res, 200, await listarRecepciones(local, Number(params[0])));
+  });
+
   router.get("/api/local/lotes", async (req, res, { url }) => {
     await sesionCon(req, "INVENTARIO_CONSULTAR");
     return send(res, 200, await listarLotes(local, Object.fromEntries(url.searchParams)));
@@ -58,10 +70,7 @@ export default function lotes(router) {
     return send(res, 200, await detalleMedicamento(local, Number(params[0])));
   });
 
-  router.get("/api/local/proveedores", async (req, res) => {
-    await sesionCon(req, "INVENTARIO_GESTIONAR");
-    return send(res, 200, await listarProveedores(local));
-  });
+  // GET /api/local/proveedores pasó a routes/proveedores.mjs (HU-13): sigue sirviendo a INVENTARIO_GESTIONAR.
 
   router.get("/api/local/pedidos", async (req, res) => {
     await sesionCon(req, "INVENTARIO_GESTIONAR");

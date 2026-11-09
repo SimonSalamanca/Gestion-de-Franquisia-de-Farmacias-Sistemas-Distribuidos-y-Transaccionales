@@ -36,6 +36,8 @@ import RecetasEmitidas from "./RecetasEmitidas.jsx";
 import Reportes from "./Reportes.jsx";
 import ReportesRed from "./ReportesRed.jsx";
 import VistaRed from "./VistaRed.jsx";
+import Abastecimiento from "./Abastecimiento.jsx";
+import CierreCaja from "./CierreCaja.jsx";
 
 const CUENTAS = [
   { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
@@ -60,13 +62,15 @@ const AMBITO = {
   AUDITORIA_CONSULTAR: "ambos",
   // HU-03: precio de red; lo cambian el admin de tienda (POS) y el admin general (consola).
   PRECIO_GESTIONAR: "ambos",
+  // HU-13: proveedores en el POS (con sus solicitudes) y en la consola (registro de la red).
+  PROVEEDOR_GESTIONAR: "ambos",
 };
 
 // Módulos con pantalla propia, por nodo; el resto muestra la tarjeta del módulo.
 // Local: HU-01 y HU-02 (inventario del POS), HU-08 y HU-12 (caja y recetas), HU-10 (anulaciones), HU-05 (reportes). Central: HU-15 (tiendas de la red), HU-05 (comparativo), HU-16 (vista de red). Ambos: HU-07 y HU-03.
 const PANTALLAS = {
-  local: { INVENTARIO_CONSULTAR: InventarioAlertas, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, VENTA_REGISTRAR: Caja, FACTURA_ANULAR: Anulaciones, REPORTE_TIENDA_VER: Reportes },
-  central: { RED_CONTROL: RecetasEmitidas, TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, REPORTE_CONSOLIDADO_VER: ReportesRed, RED_VISIBILIDAD: VistaRed },
+  local: { INVENTARIO_CONSULTAR: InventarioAlertas, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, PROVEEDOR_GESTIONAR: Abastecimiento, CAJA_CERRAR: CierreCaja, VENTA_REGISTRAR: Caja, FACTURA_ANULAR: Anulaciones, REPORTE_TIENDA_VER: Reportes },
+  central: { RED_CONTROL: RecetasEmitidas, TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, PROVEEDOR_GESTIONAR: Abastecimiento, REPORTE_CONSOLIDADO_VER: ReportesRed, RED_VISIBILIDAD: VistaRed },
 };
 
 const ESTADO_TEXTO = { online: "En línea", degradado: "Conexión lenta", offline: "Sin conexión" };

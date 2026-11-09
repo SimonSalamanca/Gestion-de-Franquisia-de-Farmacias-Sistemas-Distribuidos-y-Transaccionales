@@ -18,6 +18,7 @@ export const MODULES = {
   VENTA_REGISTRAR: { titulo: "Ventas y recetas", ambito: "tienda", texto: "Registro de venta y facturación; receta médica para los medicamentos que la requieren." },
   FACTURA_ANULAR: { titulo: "Anulaciones", ambito: "tienda", texto: "Anulación o devolución con motivo obligatorio." },
   PRECIO_GESTIONAR: { titulo: "Precios", ambito: "tienda", texto: "Precio de red vigente, programado e historial. No altera facturas ya emitidas." },
+  PROVEEDOR_GESTIONAR: { titulo: "Proveedores", ambito: "tienda", texto: "Registro de proveedores y solicitudes de reabastecimiento, manuales o desde una alerta de stock." },
   EMPLEADO_GESTIONAR: { titulo: "Empleados", ambito: "tienda", texto: "Cuentas, roles y restablecimiento de contraseña." },
   AUDITORIA_CONSULTAR: { titulo: "Auditoría", ambito: "tienda", texto: "Registro no editable de las acciones críticas, con filtros." },
   REPORTE_TIENDA_VER: { titulo: "Reportes", ambito: "tienda", texto: "Ventas por método de pago, más vendidos, stock crítico y caducidad, con exportación." },

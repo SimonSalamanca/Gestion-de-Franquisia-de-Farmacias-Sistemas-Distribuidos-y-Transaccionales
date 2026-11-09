@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.js";
 import { EstadoLote, HistorialLote, Indicadores, alertaCaducidad, fechaCorta } from "./inventarioUi.jsx";
+import Traslados from "./Traslados.jsx";
 
 // HU-02: lotes, registro manual, recepción de pedidos y ajustes (RF-02, RF-04, RF-23).
 // Las escrituras van con Idempotency-Key: un doble clic o un reintento no duplica el movimiento.
@@ -10,6 +11,8 @@ const PESTANAS = [
   ["lotes", "Lotes"],
   ["registrar", "Registrar lote"],
   ["recibir", "Recibir pedido"],
+  // HU-17: traslado de medicamentos desde otra tienda de la red.
+  ["traslados", "Traslados"],
 ];
 
 function useEnvio(token) {
@@ -58,6 +61,7 @@ export default function Lotes({ session }) {
       {pestana === "lotes" && <ListaLotes token={session.token} version={version} onCambio={cambio} />}
       {pestana === "registrar" && <RegistrarLote token={session.token} onCambio={cambio} />}
       {pestana === "recibir" && <RecibirPedido token={session.token} onCambio={cambio} />}
+      {pestana === "traslados" && <Traslados session={session} />}
     </article>
   );
 }
@@ -300,11 +304,20 @@ function RegistrarLote({ token, onCambio }) {
   );
 }
 
+// HU-14: recepción de un pedido (solicitud de reabastecimiento). Pide lote y caducidad de lo que llega, actualiza el
+// inventario con lote y proveedor, queda ligada al pedido y deja constancia de las diferencias (faltante o sobrante).
+const diferenciaTexto = (d) => (d.tipo === "SOBRANTE" ? `sobran ${d.diferencia}` : `faltan ${Math.abs(d.diferencia)}`);
+
 function RecibirPedido({ token, onCambio }) {
   const { enviar, ocupado } = useEnvio(token);
   const [pedidos, setPedidos] = useState(null);
   const [elegido, setElegido] = useState(null);
   const [lineas, setLineas] = useState({});
+  const [documento, setDocumento] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [cerrar, setCerrar] = useState(false);
+  const [historial, setHistorial] = useState(null);
+  const [cerrando, setCerrando] = useState(null);
   const [error, setError] = useState("");
   const [listo, setListo] = useState(null);
 
@@ -320,6 +333,10 @@ function RecibirPedido({ token, onCambio }) {
     setElegido(pedido);
     setError("");
     setListo(null);
+    setDocumento("");
+    setMotivo("");
+    setCerrar(false);
+    setHistorial(null);
     setLineas(
       Object.fromEntries(
         pedido.lineas
@@ -327,9 +344,17 @@ function RecibirPedido({ token, onCambio }) {
           .map((l) => [l.id_medicamento, { numero_lote: "", fecha_caducidad: "", cantidad: String(l.cantidad_solicitada - l.cantidad_recibida) }]),
       ),
     );
+    api(`/api/local/pedidos/${pedido.id_pedido}/recepciones`, { token }).then((r) => r.ok && setHistorial(r.data));
   }
 
   const cambiar = (id, campo) => (e) => setLineas((ls) => ({ ...ls, [id]: { ...ls[id], [campo]: e.target.value } }));
+
+  // Diferencia por línea frente a lo pendiente: negativa falta, positiva sobra.
+  const pendienteDe = (l) => l.cantidad_solicitada - l.cantidad_recibida;
+  const diferenciaDe = (l) => Number(lineas[l.id_medicamento]?.cantidad || 0) - pendienteDe(l);
+  const visibles = elegido ? elegido.lineas.filter((l) => lineas[l.id_medicamento]) : [];
+  const haySobrante = visibles.some((l) => diferenciaDe(l) > 0);
+  const hayFaltante = visibles.some((l) => diferenciaDe(l) < 0);
 
   async function recibir(event) {
     event.preventDefault();
@@ -339,7 +364,15 @@ function RecibirPedido({ token, onCambio }) {
       .filter(([, l]) => Number(l.cantidad) > 0)
       .map(([id, l]) => ({ id_medicamento: Number(id), numero_lote: l.numero_lote.trim(), fecha_caducidad: l.fecha_caducidad, cantidad: Number(l.cantidad) }));
     if (enviadas.length === 0) return setError("Indique al menos una línea con cantidad");
-    const r = await enviar(`/api/local/pedidos/${elegido.id_pedido}/recepcion`, { lineas: enviadas });
+    if ((haySobrante || (cerrar && hayFaltante)) && motivo.trim().length < 5) {
+      return setError("La cantidad no coincide con la solicitada: indique el motivo de la diferencia (mínimo 5 caracteres)");
+    }
+    const r = await enviar(`/api/local/pedidos/${elegido.id_pedido}/recepcion`, {
+      lineas: enviadas,
+      documento_proveedor: documento.trim() || undefined,
+      motivo_diferencia: motivo.trim() || undefined,
+      cerrar_con_diferencia: cerrar && hayFaltante,
+    });
     if (!r.ok) return setError(mensajeError(r));
     setListo(r.data);
     setElegido(null);
@@ -347,10 +380,34 @@ function RecibirPedido({ token, onCambio }) {
     onCambio();
   }
 
+  async function cerrarConDiferencia(event) {
+    event.preventDefault();
+    setError("");
+    if (motivo.trim().length < 5) return setError("Indique el motivo de la diferencia (mínimo 5 caracteres)");
+    const r = await enviar(`/api/local/pedidos/${cerrando.id_pedido}/cierre`, { motivo_diferencia: motivo.trim() });
+    if (!r.ok) return setError(mensajeError(r));
+    setListo({ ...r.data, cierre: true });
+    setCerrando(null);
+    setMotivo("");
+    cargar();
+    onCambio();
+  }
+
   if (!pedidos) return error ? <div className="error">{error}</div> : <p className="muted">Cargando pedidos…</p>;
   return (
     <>
-      {listo && <div className="ok">Pedido {listo.id_pedido} recibido: {listo.estado === "RECIBIDO_TOTAL" ? "completo" : "parcial"} ({listo.lotes.length} lote(s)).</div>}
+      {listo && (
+        <div className="ok">
+          {listo.cierre ? `Pedido ${listo.id_pedido} cerrado con diferencia.` : `Pedido ${listo.id_pedido} recibido: ${listo.estado === "RECIBIDO_TOTAL" ? "completo" : "parcial"} (${listo.lotes.length} lote(s), recepción ${listo.id_recepcion}).`}
+          {listo.diferencias?.length > 0 && (
+            <ul className="lineas">
+              {listo.diferencias.map((d) => (
+                <li key={d.id_diferencia}>Diferencia registrada: {d.nombre_comercial} · {diferenciaTexto(d)} (pedidas {d.cantidad_solicitada}, recibidas {d.cantidad_recibida}). Motivo: {d.motivo}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {pedidos.length === 0 && <div className="inv-vacio">No hay pedidos pendientes de recibir.</div>}
       {!elegido && (
         <ul className="inv-lista">
@@ -359,19 +416,49 @@ function RecibirPedido({ token, onCambio }) {
               <div className="inv-fila">
                 <div>
                   <strong>Pedido {p.id_pedido}</strong> · {p.proveedor}
-                  <div className="muted">{p.estado === "RECIBIDO_PARCIAL" ? "Recibido en parte" : "Solicitado"} · {p.lineas.length} producto(s)</div>
+                  <div className="muted">{p.estado === "RECIBIDO_PARCIAL" ? "Recibido en parte" : p.estado === "ENVIADO" ? "Enviado" : "Solicitado"} · {p.lineas.length} producto(s){p.con_diferencia ? " · con diferencia" : ""}</div>
                 </div>
-                <button className="primary" onClick={() => elegir(p)}>Recibir</button>
+                <div className="inv-stock">
+                  <button className="primary" onClick={() => elegir(p)}>Recibir</button>
+                  {p.estado === "RECIBIDO_PARCIAL" && (
+                    <button className="ghost" onClick={() => { setCerrando(cerrando?.id_pedido === p.id_pedido ? null : p); setMotivo(""); setError(""); }}>
+                      Cerrar con diferencia
+                    </button>
+                  )}
+                </div>
               </div>
+              {cerrando?.id_pedido === p.id_pedido && (
+                <form className="subform" onSubmit={cerrarConDiferencia}>
+                  <p className="muted">
+                    Falta por recibir: {p.lineas.filter((l) => l.cantidad_recibida < l.cantidad_solicitada).map((l) => `${l.nombre_comercial} (${l.cantidad_solicitada - l.cantidad_recibida})`).join(", ")}. Se da por terminado el pedido y queda constancia.
+                  </p>
+                  <input placeholder="Motivo de la diferencia (mínimo 5 caracteres)" value={motivo} onChange={(e) => setMotivo(e.target.value)} maxLength={300} aria-label="Motivo de la diferencia" />
+                  <button className="primary" disabled={ocupado}>Cerrar pedido con diferencia</button>
+                </form>
+              )}
             </li>
           ))}
         </ul>
       )}
+      {!elegido && error && <div className="error">{error}</div>}
       {elegido && (
         <form className="formulario" onSubmit={recibir}>
           <p>
             <strong>Pedido {elegido.id_pedido}</strong> · proveedor {elegido.proveedor} (no se puede cambiar)
           </p>
+          {historial?.recepciones.length > 0 && (
+            <div className="muted">
+              Recepciones anteriores:
+              <ul className="lineas">
+                {historial.recepciones.map((r) => (
+                  <li key={r.id_recepcion}>
+                    Recepción {r.id_recepcion} · {fechaCorta(String(r.fecha_hora).slice(0, 10))} · {r.responsable}
+                    {r.lineas.map((x) => ` · ${x.nombre_comercial}: ${x.cantidad} (lote ${x.numero_lote})`).join("")}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="tabla-scroll">
             <table className="tabla">
               <thead>
@@ -380,27 +467,48 @@ function RecibirPedido({ token, onCambio }) {
                   <th className="num">Pendiente</th>
                   <th>Número de lote</th>
                   <th>Caducidad</th>
-                  <th>Cantidad</th>
+                  <th>Cantidad recibida</th>
+                  <th>Diferencia</th>
                 </tr>
               </thead>
               <tbody>
-                {elegido.lineas
-                  .filter((l) => lineas[l.id_medicamento])
-                  .map((l) => (
+                {visibles.map((l) => {
+                  const dif = diferenciaDe(l);
+                  return (
                     <tr key={l.id_medicamento}>
                       <td>
                         {l.nombre_comercial}
                         {l.requiere_refrigeracion && <div><span className="badge frio">Refrigeración 2–8 °C</span></div>}
                       </td>
-                      <td className="num">{l.cantidad_solicitada - l.cantidad_recibida}</td>
+                      <td className="num">{pendienteDe(l)}</td>
                       <td><input value={lineas[l.id_medicamento].numero_lote} maxLength={60} onChange={cambiar(l.id_medicamento, "numero_lote")} aria-label="Número de lote" /></td>
                       <td><input type="date" value={lineas[l.id_medicamento].fecha_caducidad} onChange={cambiar(l.id_medicamento, "fecha_caducidad")} aria-label="Caducidad" /></td>
-                      <td><input type="number" min="0" value={lineas[l.id_medicamento].cantidad} onChange={cambiar(l.id_medicamento, "cantidad")} aria-label="Cantidad" /></td>
+                      <td><input type="number" min="0" value={lineas[l.id_medicamento].cantidad} onChange={cambiar(l.id_medicamento, "cantidad")} aria-label="Cantidad recibida" /></td>
+                      <td>{dif === 0 ? <span className="muted">Coincide</span> : <span className={`pill ${dif < 0 ? "bajo" : "media"}`}>{dif < 0 ? `Faltan ${-dif}` : `Sobran ${dif}`}</span>}</td>
                     </tr>
-                  ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
+          <label htmlFor="rec-documento">Remisión o factura del proveedor (opcional)</label>
+          <input id="rec-documento" value={documento} maxLength={60} onChange={(e) => setDocumento(e.target.value)} />
+          {(haySobrante || hayFaltante) && (
+            <>
+              <p className="muted">
+                La cantidad recibida no coincide con la solicitada.{" "}
+                {haySobrante ? "El sobrante necesita su motivo. " : ""}
+                {hayFaltante ? "Lo que falta puede quedar pendiente para otra entrega, o cerrar el pedido con la diferencia." : ""}
+              </p>
+              {hayFaltante && (
+                <label className="check">
+                  <input type="checkbox" checked={cerrar} onChange={(e) => setCerrar(e.target.checked)} /> Cerrar el pedido aunque falten unidades (queda constancia)
+                </label>
+              )}
+              <label htmlFor="rec-motivo">Motivo de la diferencia{haySobrante || cerrar ? " (obligatorio)" : ""}</label>
+              <input id="rec-motivo" value={motivo} maxLength={300} onChange={(e) => setMotivo(e.target.value)} />
+            </>
+          )}
           <div className="row">
             <button className="primary" disabled={ocupado}>{ocupado ? "Recibiendo…" : "Confirmar recepción"}</button>
             <button type="button" className="ghost" onClick={() => setElegido(null)}>Volver</button>
