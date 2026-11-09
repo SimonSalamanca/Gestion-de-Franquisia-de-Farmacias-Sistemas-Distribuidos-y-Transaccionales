@@ -36,6 +36,20 @@ export function aCentavos(valor, campo) {
   return Number(enteros) * 100 + Number(decimales.padEnd(2, "0"));
 }
 
+// HU-16: resumen por categoría para el central (vista de red filtrada por categoría). items: { id_categoria, cantidad,
+// centavos }; un medicamento sin categoría va a la 0.
+export function porCategoria(items) {
+  const grupos = new Map();
+  for (const i of items) {
+    const id = i.id_categoria ?? 0;
+    const g = grupos.get(id) ?? { id_categoria: id, unidades: 0, centavos: 0 };
+    g.unidades += i.cantidad;
+    g.centavos += i.centavos;
+    grupos.set(id, g);
+  }
+  return [...grupos.values()].map((g) => ({ id_categoria: g.id_categoria, unidades: g.unidades, ingresos: aDecimal(g.centavos) }));
+}
+
 export const aDecimal = (centavos) => `${Math.floor(centavos / 100)}.${String(centavos % 100).padStart(2, "0")}`;
 
 function entero(valor, campo, maximo = 2_000_000_000) {
@@ -63,7 +77,7 @@ function validarLineas(lineas) {
 async function planear(db, lineas, { bloquear }) {
   const ids = lineas.map((l) => l.id_medicamento);
   const info = await db.query(
-    `select m.id_medicamento, m.nombre_comercial, m.requiere_receta, m.activo, m.tasa_impuesto::text as tasa,
+    `select m.id_medicamento, m.nombre_comercial, m.requiere_receta, m.activo, m.tasa_impuesto::text as tasa, m.id_categoria,
             precio_vigente(m.id_medicamento, now()::timestamp)::text as precio
      from medicamento_ref m where m.id_medicamento = any($1::int[])`,
     [ids],
@@ -122,6 +136,7 @@ async function planear(db, lineas, { bloquear }) {
         id_lote: lote.id_lote,
         numero_lote: lote.numero_lote,
         id_medicamento: med.id_medicamento,
+        id_categoria: med.id_categoria,
         cantidad,
         precio,
         tasa,
@@ -274,6 +289,7 @@ export async function registrarVenta(sesion, key, body) {
       fecha: fecha.toISOString().slice(0, 10),
       total: aDecimal(plan.total),
       pagos: pagos.map((p) => ({ id_metodo_pago: p.id_metodo_pago, monto: aDecimal(p.centavos) })),
+      categorias: porCategoria(f.map((x) => ({ id_categoria: x.id_categoria, cantidad: x.cantidad, centavos: x.subtotal + x.impuesto }))),
     };
     try {
       await client.query(

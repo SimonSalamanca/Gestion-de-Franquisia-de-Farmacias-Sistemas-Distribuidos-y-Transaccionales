@@ -66,6 +66,10 @@ export const config = {
   seedDemo: bool(env.SEED_DEMO, !produccion),
   syncIntervaloMs: entero(env, "SYNC_INTERVALO_MS", 10000),
   syncLote: entero(env, "SYNC_LOTE", 500),
+  // HU-16: cada cuánto la tienda envía la foto completa de su stock (consolidación periódica y latido), y desde cuántos
+  // minutos sin foto la vista de red marca a una tienda como desactualizada.
+  consolidacionIntervaloMs: entero(env, "CONSOLIDACION_INTERVALO_MS", 120000),
+  consolidadoMaxRetrasoMin: entero(env, "CONSOLIDADO_MAX_RETRASO_MIN", 5),
 };
 
 export const avisos = [];

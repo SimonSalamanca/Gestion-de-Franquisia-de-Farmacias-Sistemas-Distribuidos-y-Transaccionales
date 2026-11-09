@@ -271,3 +271,15 @@ code { font-size: 12px; color: #5d726b; }
   body.imprimiendo-reporte .reporte * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body.imprimiendo-reporte .rep-kpis { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* HU-16: vista de red */
+.vr-filtros { display: grid; grid-template-columns: repeat(2, minmax(0, 260px)); gap: 12px; margin-top: 16px; }
+.vr-filtros label { margin: 0; }
+.vr-filtros select { margin-top: 6px; }
+.vr-aviso p { margin: 4px 0; }
+tr.vr-vieja { background: #fff4f2; }
+.vr-tiendas .pill { white-space: nowrap; }
+.vr-buscar { max-width: 420px; margin: 4px 0 8px; }
+@media (max-width: 860px) {
+  .vr-filtros { grid-template-columns: 1fr; }
+}

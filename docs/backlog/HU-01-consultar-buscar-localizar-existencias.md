@@ -108,7 +108,11 @@ Se usa el permiso existente `INVENTARIO_CONSULTAR`, que ya tienen `cajero`, `adm
     "items": [{ "id_medicamento": 7, "cantidad": 42 }] }
   ```
   `calculado_en` sale de `now()` de la base local. `id_empleado` del outbox va en `NULL`: el outbox ordena por empleado, y así un evento de login atascado de quien hizo el movimiento no frena la publicación del stock. El responsable queda en `movimiento_inventario`.
-- Reconciliación: al arrancar y cada 15 minutos el nodo encola un `STOCK_SNAPSHOT` completo (todos los medicamentos con lotes, incluidos los que quedaron en 0), para corregir cualquier deriva.
+- Reconciliación: al arrancar y cada `CONSOLIDACION_INTERVALO_MS` (2 minutos por defecto; antes 15) el nodo encola un `STOCK_SNAPSHOT` completo, para corregir cualquier deriva.
+  - Desde HU-16 (2026-11-09) cubre todos los medicamentos activos además de los que tienen lotes, incluidos los que quedaron en 0.
+  - Es también el latido con que la vista de red sabe si la tienda está al día.
+  - Sin conexión no se acumulan: la foto completa pendiente se reemplaza por la nueva.
+  - El central la aplica en una sola sentencia.
 - El envío reutiliza `flushOutbox`. Hoy todo evento del outbox va a `fold_evento` (autenticación). Se agrega un despacho por `tipo_evento` en el código del API: los tipos de HU-06 siguen yendo a `fold_evento`; `STOCK_SNAPSHOT` lo aplica el API en el central, en una transacción:
   1. `insert into inbox_sync (id_tienda_origen, idempotency_key, tipo_evento, payload) … on conflict do nothing`. Si no insertó, es duplicado y no hace nada más.
   2. Por ítem: `insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion) values (…) on conflict (id_tienda, id_medicamento) do update set … where inventario_consolidado.fecha_sincronizacion <= excluded.fecha_sincronizacion`. Una foto vieja que llega tarde no pisa una nueva.

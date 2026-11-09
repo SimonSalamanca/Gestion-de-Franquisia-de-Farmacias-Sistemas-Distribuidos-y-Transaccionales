@@ -11,8 +11,9 @@ import { evaluarAlertas } from "./alertas.mjs";
 // Las rutas se registran en app.mjs.
 const server = crearServidor();
 
-// HU-01: cada 15 minutos se encola una foto completa del stock para corregir cualquier deriva del consolidado.
-const RECONCILIACION_MS = 15 * 60 * 1000;
+// HU-01 y HU-16: foto completa del stock cada CONSOLIDACION_INTERVALO_MS (2 min por defecto). Corrige cualquier deriva
+// del consolidado y es el latido con que la vista de red sabe si la tienda está al día.
+const RECONCILIACION_MS = config.consolidacionIntervaloMs;
 let ultimaReconciliacion = 0;
 
 async function reconciliarStock() {

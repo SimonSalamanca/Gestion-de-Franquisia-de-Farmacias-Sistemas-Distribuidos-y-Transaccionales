@@ -32,7 +32,7 @@ export async function stockDe(client, idsMedicamento) {
 // hizo el movimiento no frena la publicación del stock (el responsable ya queda en movimiento_inventario).
 // Stock y hora (now() de la base, en UTC ISO) se calculan y encolan en una sola sentencia: con la base
 // remota (Neon) cada ida y vuelta cuesta ~130 ms, y esto corre dentro de cada movimiento.
-export async function encolarStockSnapshot(client, { idTienda, idsMedicamento }) {
+export async function encolarStockSnapshot(client, { idTienda, idsMedicamento, completo = false }) {
   const ids = [...new Set(idsMedicamento.map(Number))];
   if (ids.length === 0) return null;
   const key = crypto.randomUUID();
@@ -41,16 +41,27 @@ export async function encolarStockSnapshot(client, { idTienda, idsMedicamento })
      select null, $1, 'STOCK_SNAPSHOT', jsonb_build_object(
               'id_tienda', $2::int,
               'calculado_en', to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+              'completo', $4::boolean,
               'items', jsonb_agg(jsonb_build_object('id_medicamento', m.id_medicamento, 'cantidad', coalesce(s.stock, 0)) order by m.ord))
      from unnest($3::int[]) with ordinality as m(id_medicamento, ord)
      left join (${SQL_STOCK_VENDIBLE}) s on s.id_medicamento = m.id_medicamento`,
-    [key, Number(idTienda), ids],
+    [key, Number(idTienda), ids, completo],
   );
   return key;
 }
 
-// Reconciliación: foto completa de todo medicamento que tenga o haya tenido lotes (incluye los que quedaron en 0).
+// Consolidación periódica (HU-01 y HU-16): foto completa de todos los medicamentos activos y de los que tienen o tuvieron
+// lotes (incluye los que están en 0). Corrige cualquier deriva del consolidado y es el latido de la tienda: llega aunque
+// no haya movimientos, y el central sabe hasta qué hora tiene la información de la tienda.
+// Sin conexión no se acumulan: la foto completa que siga pendiente se descarta y queda solo la nueva, al final de la
+// cola (detrás de las ventas que ya estaban encoladas, para que su hora no prometa más de lo que llegó).
 export async function encolarStockCompleto(client, idTienda) {
-  const ids = await client.query("select distinct id_medicamento from lote order by 1");
-  return encolarStockSnapshot(client, { idTienda, idsMedicamento: ids.rows.map((row) => row.id_medicamento) });
+  await client.query(
+    `delete from outbox_sync
+     where tipo_evento = 'STOCK_SNAPSHOT' and estado in ('PENDIENTE', 'ERROR') and (payload ->> 'completo')::boolean is true`,
+  );
+  const ids = await client.query(
+    "select id_medicamento from medicamento_ref where activo union select id_medicamento from lote order by 1",
+  );
+  return encolarStockSnapshot(client, { idTienda, idsMedicamento: ids.rows.map((row) => row.id_medicamento), completo: true });
 }

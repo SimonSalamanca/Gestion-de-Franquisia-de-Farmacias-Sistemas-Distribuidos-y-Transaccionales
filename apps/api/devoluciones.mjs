@@ -4,7 +4,7 @@ import { conIdempotencia } from "./idempotencia.mjs";
 import { ErrorNegocio, conflicto, invalido, noEncontrado } from "./errores.mjs";
 import { registrarMovimiento } from "./inventario/movimientos.mjs";
 import { encolarStockSnapshot } from "./inventario/stock.mjs";
-import { aCentavos, aDecimal } from "./ventas.mjs";
+import { aCentavos, aDecimal, porCategoria } from "./ventas.mjs";
 
 // HU-10: anular una factura (total) o devolver parte de ella. Todo corre en la base de la tienda y funciona sin
 // conexión con el central: la nota, el reingreso al lote de origen, la auditoría y el evento para el central salen en UNA
@@ -59,7 +59,7 @@ export async function devolucionesDe(db, idFactura, { bloquear = false } = {}) {
   );
   if (f.rowCount === 0) throw noEncontrado("La factura no existe");
   const lineas = await db.query(
-      `select d.id_lote, l.numero_lote, m.nombre_comercial as medicamento, l.id_medicamento, d.cantidad,
+      `select d.id_lote, l.numero_lote, m.nombre_comercial as medicamento, l.id_medicamento, m.id_categoria, d.cantidad,
               d.precio_unitario_aplicado::text as precio_unitario, d.tasa_impuesto::text as tasa_impuesto,
               d.subtotal_linea::text as subtotal, d.impuesto_linea::text as impuesto,
               coalesce((select sum(dd.cantidad_devuelta) from detalle_devolucion dd
@@ -184,6 +184,7 @@ async function procesar(sesion, idFactura, tipo, motivo, solicitadas, key, body)
       fecha: fechaNota.toISOString().slice(0, 10),
       total: aDecimal(total),
       pagos: reintegro.map((p) => ({ id_metodo_pago: p.id_metodo_pago, monto: aDecimal(p.centavos) })),
+      categorias: porCategoria(items.map((i) => ({ id_categoria: i.id_categoria, cantidad: i.q, centavos: i.subtotalC + i.impuestoC }))),
     };
     const detalleAuditoria = `${numeroNota} sobre ${factura.numero_factura}; ${tipo === "ANULACION_TOTAL" ? "anulación total" : "devolución parcial"}; total ${aDecimal(total)}; motivo: ${motivo}`;
     await client.query(

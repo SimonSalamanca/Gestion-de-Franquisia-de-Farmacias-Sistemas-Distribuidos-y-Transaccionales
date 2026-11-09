@@ -30,6 +30,7 @@ Como cajero, quiero registrar la venta de uno o varios medicamentos y emitir la 
 
 - **Local (único escritor de la venta):** `factura`, `detalle_factura`, `factura_metodo_pago`, `lote`, `movimiento_inventario`, `secuencia_factura`, `registro_actividad`, `outbox_sync`. Funciona sin conexión con el central.
 - **Central:** recibe por el outbox la venta (`VENTA_REGISTRADA`) y la suma en `venta_consolidada` (tienda, día UTC y método de pago), y el stock (`STOCK_SNAPSHOT`, ya existente). Es dueño de los métodos de pago y de la tasa de impuesto.
+- **Desde HU-16 (2026-11-09):** el evento lleva además `categorias: [{ id_categoria, unidades, ingresos }]`, un resumen de las líneas por categoría (`porCategoria` en `apps/api/ventas.mjs`; 0 = sin categoría). El central lo suma en `venta_categoria_consolidada` en la misma transacción e idempotencia (`inbox_sync`). `DEVOLUCION_REGISTRADA` (HU-10) lleva lo devuelto y lo resta. Un evento anterior, sin `categorias`, solo alimenta `venta_consolidada`.
 
 ## Rutas (solo `/api/local`, permiso `VENTA_REGISTRAR`)
 

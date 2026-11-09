@@ -3,6 +3,7 @@ import { invalido } from "./errores.mjs";
 import { link } from "./sync.mjs";
 import { evaluarAlertas } from "./alertas.mjs";
 import { etiquetaMetodo } from "./ventas.mjs";
+import { frescuraDe } from "./frescura.mjs";
 
 // HU-05: reportes y estadísticas. Dos reportes, cada uno en su nodo:
 // - Tienda (local): ventas, métodos de pago, devoluciones, más vendidos, por día e inventario crítico. Funciona sin
@@ -161,13 +162,23 @@ select jsonb_build_object(
 
 const TRAMOS = ["VENCIDO", "HASTA_7", "HASTA_30", "HASTA_90"];
 
+// Con un pool, las consultas van en paralelo; con un cliente (una transacción, como en las pruebas), en serie: un cliente
+// de pg no admite consultas simultáneas.
+export async function todas(db, consultas) {
+  if ("totalCount" in db) return Promise.all(consultas.map((c) => c()));
+  const resultados = [];
+  for (const c of consultas) resultados.push(await c());
+  return resultados;
+}
+
+
 export async function reporteTienda(query, db = local) {
   const periodo = periodoDe(query);
   // Igual que el panel de HU-04: se evalúa antes, para no mostrar un estado viejo. Si falla, se usa lo último calculado.
   await evaluarAlertas().catch((error) => console.error("reportes: alertas", error.message));
-  const [ventas, inventario] = await Promise.all([
-    db.query(VENTAS_SQL, [periodo.desde, periodo.hasta]),
-    db.query(INVENTARIO_SQL),
+  const [ventas, inventario] = await todas(db, [
+    () => db.query(VENTAS_SQL, [periodo.desde, periodo.hasta]),
+    () => db.query(INVENTARIO_SQL),
   ]);
   const v = ventas.rows[0].ventas;
   const inv = inventario.rows[0].inventario;
@@ -226,7 +237,8 @@ select t.id_tienda, t.nombre, t.ciudad,
        vt.id_tienda is not null as con_ventas, ult.sync as ultima_sync_ventas,
        coalesce(s.agotados, 0)::int as agotados, coalesce(s.bajo_minimo, 0)::int as bajo_minimo,
        greatest(activos.total - coalesce(s.con_reporte, 0), 0)::int as sin_reporte,
-       s.sync as ultima_sync_stock
+       s.sync as ultima_sync_stock,
+       now()::timestamp as ahora
 from tienda t
 cross join activos
 left join vt on vt.id_tienda = t.id_tienda
@@ -252,6 +264,8 @@ export async function comparativoRed(query, db = central) {
       participacion: totalIngresos > 0 ? redondear((f.ingresos / totalIngresos) * 100) : 0,
       // Nunca consolidó ventas (distinto de "no vendió en el periodo").
       sin_datos: f.ultima_sync_ventas == null,
+      // HU-16: si la tienda no envió su información reciente, el comparativo lo dice (RNF-13).
+      frescura: frescuraDe(f.ultima_sync_stock, f.ultima_sync_ventas, f.ahora),
     };
   });
   return {
