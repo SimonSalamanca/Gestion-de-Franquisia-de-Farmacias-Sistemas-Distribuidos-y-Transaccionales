@@ -267,7 +267,7 @@ function RegistrarLote({ token, onCambio }) {
     <form className="formulario" onSubmit={guardar}>
       <label>Medicamento</label>
       <div className={marca("id_medicamento")}><ElegirMedicamento token={token} valor={medicamento} onElegir={setMedicamento} /></div>
-      {medicamento?.requiere_refrigeracion && <p className="aviso-frio">❄ Medicamento refrigerado: guárdelo entre 2 y 8 °C al recibirlo.</p>}
+      {medicamento?.requiere_refrigeracion && <p className="aviso-frio">Medicamento refrigerado: guárdelo entre 2 y 8 °C al recibirlo.</p>}
       <label>Proveedor</label>
       <select className={marca("id_proveedor")} value={form.id_proveedor} onChange={campo("id_proveedor")}>
         <option value="">Elija el proveedor</option>
@@ -390,7 +390,7 @@ function RecibirPedido({ token, onCambio }) {
                     <tr key={l.id_medicamento}>
                       <td>
                         {l.nombre_comercial}
-                        {l.requiere_refrigeracion && <div><span className="badge frio">❄ Refrigeración 2–8 °C</span></div>}
+                        {l.requiere_refrigeracion && <div><span className="badge frio">Refrigeración 2–8 °C</span></div>}
                       </td>
                       <td className="num">{l.cantidad_solicitada - l.cantidad_recibida}</td>
                       <td><input value={lineas[l.id_medicamento].numero_lote} maxLength={60} onChange={cambiar(l.id_medicamento, "numero_lote")} aria-label="Número de lote" /></td>

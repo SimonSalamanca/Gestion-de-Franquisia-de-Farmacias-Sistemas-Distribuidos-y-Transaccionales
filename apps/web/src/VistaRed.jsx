@@ -42,7 +42,7 @@ function hace(minutos) {
 export function Frescura({ frescura }) {
   if (frescura.estado === "SIN_DATOS") return <span className="pill media">Sin datos</span>;
   if (frescura.estado === "DESACTUALIZADA") {
-    return <span className="pill agotado" title={`Última información: ${fechaHora(frescura.ultima_actualizacion)}`}>⚠ Desactualizada · {hace(frescura.minutos)}</span>;
+    return <span className="pill agotado" title={`Última información: ${fechaHora(frescura.ultima_actualizacion)}`}>Desactualizada · {hace(frescura.minutos)}</span>;
   }
   return <span className="pill disponible">Al día · {hace(frescura.minutos)}</span>;
 }
@@ -60,7 +60,7 @@ function AvisoFrescura({ datos }) {
     <div className="error vr-aviso" role="alert">
       {f.desactualizadas.length > 0 && (
         <p>
-          <strong>⚠ {f.desactualizadas.length === 1 ? "Una tienda no ha enviado" : `${f.desactualizadas.length} tiendas no han enviado`} su información reciente.</strong>{" "}
+          <strong>{f.desactualizadas.length === 1 ? "Una tienda no ha enviado" : `${f.desactualizadas.length} tiendas no han enviado`} su información reciente.</strong>{" "}
           Sus cifras son de la hora indicada, no actuales:{" "}
           {f.desactualizadas.map((t, i) => (
             <span key={t.id_tienda}>{i > 0 ? "; " : ""}<strong>{t.nombre}</strong> (última {fechaHora(t.ultima_actualizacion)}, {hace(t.minutos)})</span>
@@ -225,7 +225,7 @@ export default function VistaRed({ session }) {
                 valor: x.ventas.ingresos,
                 tono: x.frescura.estado === "DESACTUALIZADA" ? "bajo" : undefined,
                 texto: x.frescura.estado === "SIN_DATOS" ? "sin datos" : pesos(x.ventas.ingresos),
-                detalle: x.frescura.estado === "DESACTUALIZADA" ? `⚠ datos de ${fechaHora(x.frescura.ultima_actualizacion)}` : null,
+                detalle: x.frescura.estado === "DESACTUALIZADA" ? `datos de ${fechaHora(x.frescura.ultima_actualizacion)}` : null,
               }))}
             />
           </section>
@@ -320,7 +320,7 @@ function InventarioRed({ token, filtros, tiendas }) {
               <thead>
                 <tr>
                   <th>Producto</th>
-                  {columnas.map((c) => <th key={c.id_tienda} className="num">{c.nombre}{vieja.get(c.id_tienda) ? " ⚠" : ""}</th>)}
+                  {columnas.map((c) => <th key={c.id_tienda} className="num">{c.nombre}{vieja.get(c.id_tienda) ? " *" : ""}</th>)}
                   <th className="num">Total red</th>
                 </tr>
               </thead>
@@ -345,7 +345,7 @@ function InventarioRed({ token, filtros, tiendas }) {
             <span className="muted">Página {datos.pagina} de {datos.paginas} · {datos.total} productos</span>
             <button className="ghost" disabled={pagina >= datos.paginas} onClick={() => setPagina((n) => n + 1)}>Siguiente</button>
           </div>
-          {[...vieja.values()].some(Boolean) && <p className="muted rep-nota">⚠ Tienda desactualizada: sus cantidades son de su última foto, no actuales.</p>}
+          {[...vieja.values()].some(Boolean) && <p className="muted rep-nota">* Tienda desactualizada: sus cantidades son de su última foto, no actuales.</p>}
         </>
       )}
     </section>
