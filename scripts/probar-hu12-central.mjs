@@ -48,7 +48,13 @@ const contar = async (pool, sql, valores = []) => Number((await pool.query(sql, 
 const fechaRelativa = async (dias) => (await local.query("select (current_date + $1::int)::text as f", [dias])).rows[0].f;
 const S = Date.now().toString(36).toUpperCase();
 const TIENDA = 1;
-const OTRA = 2;
+// "Otra tienda" de la red: la primera tienda activa distinta de esta (antes era fija la 2, que no existe en todas las bases;
+// en la copia de Neon la otra tienda es la 5). Sin una segunda tienda no se pueden probar las reservas entre tiendas.
+const OTRA = (await central.query("select id_tienda from tienda where activa and id_tienda <> $1 order by id_tienda limit 1", [TIENDA])).rows[0]?.id_tienda;
+if (!OTRA) {
+  console.error("Falta una segunda tienda activa en el central (SEED_DEMO=1 crea Farmacia Norte)");
+  process.exit(2);
+}
 
 const idDe = async (codigo) => (await local.query("select id_medicamento from medicamento_ref where codigo_interno = $1", [codigo])).rows[0]?.id_medicamento;
 const idAmoxi = await idDe("MED-004");

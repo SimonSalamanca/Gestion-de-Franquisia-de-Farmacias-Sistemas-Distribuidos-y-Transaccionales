@@ -41,9 +41,17 @@ central.query = originalQuery;
 check("cajero 200", cajero.status === 200, String(cajero.status));
 check("cajero tienda", cajero.body.id_tienda === 1, String(cajero.body.id_tienda));
 check("cajero rol", cajero.body.rol === "cajero", cajero.body.rol);
+// Permisos del cajero por historia: HU-06 (INVENTARIO_CONSULTAR, VENTA_REGISTRAR) y HU-10 (FACTURA_ANULAR,
+// db/central/10_hu10_permiso_cajero.sql). Los de administración y de reportes (HU-05, HU-16) no son del cajero.
+const PERMISOS_CAJERO = ["FACTURA_ANULAR", "INVENTARIO_CONSULTAR", "VENTA_REGISTRAR"];
 check(
   "cajero permisos",
-  JSON.stringify(cajero.body.permisos) === JSON.stringify(["INVENTARIO_CONSULTAR", "VENTA_REGISTRAR"]),
+  JSON.stringify(cajero.body.permisos) === JSON.stringify(PERMISOS_CAJERO),
+  (cajero.body.permisos || []).join(","),
+);
+check(
+  "cajero sin permisos de administración ni de reportes",
+  !(cajero.body.permisos || []).some((p) => ["CAJA_CERRAR", "EMPLEADO_GESTIONAR", "REPORTE_TIENDA_VER", "RED_VISIBILIDAD", "REPORTE_CONSOLIDADO_VER"].includes(p)),
   (cajero.body.permisos || []).join(","),
 );
 

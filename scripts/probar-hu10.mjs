@@ -260,13 +260,25 @@ try {
   // Desde antesEf: la venta v6 suma 2975.00 y su anulación resta 2975.00 (más las notas de V2, V4 y V5 pendientes de envío).
   const pendientes = (await local.query("select payload from outbox_sync where tipo_evento = 'DEVOLUCION_REGISTRADA' and payload ->> 'numero_nota' = $1", [off.data.nota.numero_nota])).rowCount;
   check("el central restó lo reintegrado (la venta y su anulación se compensan)", pendientes === 1 && despuesEf === antesEf, `${antesEf} -> ${despuesEf}`);
-  const { withTx } = await import("../apps/api/db.mjs");
   const { aplicarEnCentral } = await import("../apps/api/sync/central.mjs");
+  // Evento sin nota detrás: dentro de una transacción que se revierte, para no dejar en venta_consolidada una devolución
+  // que no existe (los reportes de HU-05 y la vista de red de HU-16 la mostrarían).
   const evento = { idempotency_key: nuevaKey(), tipo_evento: "DEVOLUCION_REGISTRADA", payload: { fecha: "2026-01-03", total: "10.00", pagos: [{ id_metodo_pago: efectivo, monto: "10.00" }] } };
-  const antesDup = await consolidado(efectivo);
-  await withTx(central, (c) => aplicarEnCentral(c, TIENDA, evento));
-  await withTx(central, (c) => aplicarEnCentral(c, TIENDA, evento));
-  check("un evento de devolución duplicado resta una sola vez", antesDup - (await consolidado(efectivo)) === 1000);
+  const leerEf = async (c) => (await c.query(
+    "select coalesce(sum(total_vendido), 0)::text as total, coalesce(sum(total_facturas), 0)::int as facturas from venta_consolidada where id_tienda = $1 and id_metodo_pago = $2",
+    [TIENDA, efectivo],
+  )).rows[0];
+  const cDup = await central.connect();
+  try {
+    await cDup.query("begin");
+    const antesDup = centavos((await leerEf(cDup)).total);
+    await aplicarEnCentral(cDup, TIENDA, evento);
+    await aplicarEnCentral(cDup, TIENDA, evento);
+    check("un evento de devolución duplicado resta una sola vez", antesDup - centavos((await leerEf(cDup)).total) === 1000);
+  } finally {
+    await cDup.query("rollback");
+    cDup.release();
+  }
 } finally {
   link.estado = "online";
   await central.query("update medicamento set activo = false where codigo_interno like $1", [`HU10-${S}-%`]);
