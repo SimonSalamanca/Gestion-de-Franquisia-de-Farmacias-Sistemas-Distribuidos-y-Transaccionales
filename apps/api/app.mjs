@@ -12,6 +12,7 @@ import ventas from "./routes/ventas.mjs";
 import alertas from "./routes/alertas.mjs";
 import historial from "./routes/historial.mjs";
 import devoluciones from "./routes/devoluciones.mjs";
+import reportes from "./routes/reportes.mjs";
 import { ErrorNegocio } from "./errores.mjs";
 
 // Cada módulo de rutas registra las suyas. Para una HU nueva: routes/<dominio>.mjs y agregarlo aquí.
@@ -28,7 +29,8 @@ const router = crearRouter()
   .usar(ventas)
   .usar(alertas)
   .usar(historial)
-  .usar(devoluciones);
+  .usar(devoluciones)
+  .usar(reportes);
 
 export function crearServidor() {
   return http.createServer(async (req, res) => {

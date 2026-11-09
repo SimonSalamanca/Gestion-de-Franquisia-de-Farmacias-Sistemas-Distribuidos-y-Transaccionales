@@ -219,3 +219,55 @@ code { font-size: 12px; color: #5d726b; }
   .factura-impresion { position: absolute; left: 0; top: 0; width: 100%; }
   .no-print { display: none; }
 }
+
+/* HU-05: reportes y comparativo de red */
+/* Las tablas anchas se desplazan dentro de su .tabla-scroll en lugar de ensanchar la página. */
+.content, .reporte, .rep-bloque { min-width: 0; }
+.reporte { background: white; border: 1px solid #d7e2dc; border-radius: 16px; padding: 24px; max-width: 1100px; }
+.rep-cabecera { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.rep-cabecera h2 { margin: 0 0 4px; }
+.rep-exportar { flex-wrap: wrap; align-items: center; }
+.rep-exportar .error { margin-top: 0; }
+.rep-periodo { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 16px 0; }
+.rep-periodo label { margin: 0; }
+.rep-periodo input { width: auto; padding: 9px 10px; }
+.rep-presets { flex-wrap: wrap; }
+.rep-presets .ghost { padding: 9px 12px; }
+.rep-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 16px 0; }
+.kpi { display: flex; flex-direction: column; gap: 2px; border: 1px solid #d7e2dc; border-radius: 12px; padding: 12px 14px; }
+.kpi strong { font-size: 24px; font-weight: 650; color: #12382f; }
+.kpi span { font-size: 13px; }
+.rep-bloque { margin-top: 24px; break-inside: avoid; }
+.rep-bloque h3 { margin: 0 0 8px; font-size: 17px; }
+.rep-nota { font-size: 13px; margin-top: 8px; }
+.barras { display: grid; gap: 6px; margin: 8px 0; }
+.barra { display: grid; grid-template-columns: minmax(110px, 220px) 1fr minmax(150px, auto); gap: 10px; align-items: center; font-size: 14px; }
+.barra-etiqueta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barra-pista { position: relative; height: 16px; background: #eef3f0; border-radius: 6px; overflow: hidden; }
+.barra-pista.vacia { background: #fde8e6; box-shadow: inset 0 0 0 1px #e8a39b; }
+.barra-relleno { display: block; height: 100%; background: #1b7a62; border-radius: 6px; }
+.barra-relleno.agotado { background: #c4473b; }
+.barra-relleno.bajo { background: #d99a1e; }
+.barra-relleno.media { background: #4f7fbf; }
+.barra-marca { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #16312b; }
+.barra-valor { font-weight: 600; white-space: nowrap; }
+.barra-valor .muted { font-weight: 400; }
+.columnas { width: 100%; height: auto; max-height: 200px; display: block; }
+.columnas .positiva { fill: #1b7a62; }
+.columnas .negativa { fill: #c4473b; }
+.columnas .eje { stroke: #c9d7d1; }
+.columnas .rotulo { font-size: 11px; fill: #5d726b; }
+@media (max-width: 860px) {
+  .reporte { padding: 16px; }
+  .barra { grid-template-columns: 1fr; gap: 2px; }
+  .barra-valor { white-space: normal; }
+}
+/* PDF: con la clase imprimiendo-reporte en <body> solo sale el reporte, con sus colores. */
+@media print {
+  body.imprimiendo-reporte .reporte, body.imprimiendo-reporte .reporte * { visibility: visible; }
+  body.imprimiendo-reporte .reporte { position: absolute; left: 0; top: 0; width: 100%; max-width: none; border: 0; padding: 0; }
+  body.imprimiendo-reporte .reporte .no-print { display: none; }
+  body.imprimiendo-reporte .tabla-scroll { overflow: visible; }
+  body.imprimiendo-reporte .reporte * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  body.imprimiendo-reporte .rep-kpis { grid-template-columns: repeat(4, 1fr); }
+}

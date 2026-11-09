@@ -20,6 +20,7 @@ export const MODULES = {
   PRECIO_GESTIONAR: { titulo: "Precios", ambito: "tienda", texto: "Precio de red vigente, programado e historial. No altera facturas ya emitidas." },
   EMPLEADO_GESTIONAR: { titulo: "Empleados", ambito: "tienda", texto: "Cuentas, roles y restablecimiento de contraseña." },
   AUDITORIA_CONSULTAR: { titulo: "Auditoría", ambito: "tienda", texto: "Registro no editable de las acciones críticas, con filtros." },
+  REPORTE_TIENDA_VER: { titulo: "Reportes", ambito: "tienda", texto: "Ventas por método de pago, más vendidos, stock crítico y caducidad, con exportación." },
   CAJA_CERRAR: { titulo: "Cierre de caja", ambito: "tienda", texto: "Total por método de pago comparado con el efectivo contado." },
   RED_VISIBILIDAD: { titulo: "Vista de red", ambito: "red", texto: "Inventario, ventas e ingresos consolidados. No es tiempo real estricto." },
   RED_CONTROL: { titulo: "Control de red", ambito: "red", texto: "Alta, edición y umbrales de las tiendas de la cadena." },
