@@ -26,7 +26,7 @@ const texto = (valor) => String(valor ?? "").trim();
 
 // Los métodos de pago se guardan con un código ("tarjeta_debito"); aquí se muestran con su etiqueta.
 const ETIQUETAS = { efectivo: "Efectivo", tarjeta_debito: "Tarjeta débito", tarjeta_credito: "Tarjeta crédito", transferencia: "Transferencia" };
-const etiquetaMetodo = (codigo) => ETIQUETAS[codigo] ?? String(codigo).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+export const etiquetaMetodo = (codigo) => ETIQUETAS[codigo] ?? String(codigo).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
 // "1234.5" -> 123450 centavos. Rechaza más de dos decimales.
 export function aCentavos(valor, campo) {

@@ -14,6 +14,7 @@
     "test:hu02": "node scripts/probar-hu02.mjs",
     "test:hu03": "node scripts/probar-hu03.mjs",
     "test:hu04": "node scripts/probar-hu04.mjs",
+    "test:hu05": "node scripts/probar-hu05.mjs",
     "test:hu07": "node scripts/probar-hu07.mjs",
     "test:hu08": "node scripts/probar-hu08.mjs",
     "test:hu09": "node scripts/probar-hu09.mjs",

@@ -10,6 +10,8 @@ import Caja from "./Caja.jsx";
 import Anulaciones from "./Anulaciones.jsx";
 import InventarioAlertas from "./InventarioAlertas.jsx";
 import RecetasEmitidas from "./RecetasEmitidas.jsx";
+import Reportes from "./Reportes.jsx";
+import ReportesRed from "./ReportesRed.jsx";
 
 const CUENTAS = [
   { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
@@ -23,6 +25,8 @@ const AMBITO = {
   VENTA_REGISTRAR: "tienda",
   FACTURA_ANULAR: "tienda",
   CAJA_CERRAR: "tienda",
+  // HU-05: reporte de la propia tienda (POS); el comparativo de red es REPORTE_CONSOLIDADO_VER (consola).
+  REPORTE_TIENDA_VER: "tienda",
   RED_VISIBILIDAD: "red",
   RED_CONTROL: "red",
   TIENDA_GESTIONAR: "red",
@@ -35,10 +39,10 @@ const AMBITO = {
 };
 
 // Módulos con pantalla propia, por nodo; el resto muestra la tarjeta del módulo.
-// Local: HU-01 y HU-02 (inventario del POS), HU-08 y HU-12 (caja y recetas), HU-10 (anulaciones). Central: HU-15 (tiendas de la red). Ambos: HU-07 y HU-03.
+// Local: HU-01 y HU-02 (inventario del POS), HU-08 y HU-12 (caja y recetas), HU-10 (anulaciones), HU-05 (reportes). Central: HU-15 (tiendas de la red), HU-05 (comparativo). Ambos: HU-07 y HU-03.
 const PANTALLAS = {
-  local: { INVENTARIO_CONSULTAR: InventarioAlertas, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, VENTA_REGISTRAR: Caja, FACTURA_ANULAR: Anulaciones },
-  central: { RED_CONTROL: RecetasEmitidas, TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios },
+  local: { INVENTARIO_CONSULTAR: InventarioAlertas, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, VENTA_REGISTRAR: Caja, FACTURA_ANULAR: Anulaciones, REPORTE_TIENDA_VER: Reportes },
+  central: { RED_CONTROL: RecetasEmitidas, TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, REPORTE_CONSOLIDADO_VER: ReportesRed },
 };
 
 export default function App() {
