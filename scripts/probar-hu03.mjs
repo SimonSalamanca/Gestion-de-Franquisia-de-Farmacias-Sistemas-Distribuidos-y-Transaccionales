@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { desactivarMedicamentos, publicarAltaMedicamento } from "./lib/central.mjs";
 // Pruebas de HU-03 por las rutas reales de app.mjs: permisos, validaciones, programación, historial inmutable,
 // réplica a la tienda, consulta sin conexión, precio vigente en un instante y facturas que no cambian.
 // ESCRIBE en las bases del .env: con URLs de Neon se niega a correr salvo PERMITIR_NEON=1 (rama de prueba).
@@ -56,6 +58,7 @@ const creado = await central.query(
    select id_medicamento from m`,
   [codigo, `Prueba Precios ${S}`],
 );
+await publicarAltaMedicamento(creado.rows[0].id_medicamento);
 const idMed = creado.rows[0].id_medicamento;
 await migrate();
 await pullReplica();
@@ -113,6 +116,7 @@ try {
   const enVigor = await pedir(`/api/local/precios/registro/${actual.id_precio}`, { method: "PATCH", token: adminTienda, key: nuevaKey(), body: { precio: "1" } });
   check("un precio que ya rige no se corrige 409", enVigor.status === 409 && enVigor.data.codigo === "PRECIO_EN_VIGOR");
   let bloqueos = 0;
+  // guardia-permitido: intento rechazado por la base (el historial que ya rigió es inmutable)
   for (const sql of ["update precio_medicamento set precio = 1 where id_precio = $1", "delete from precio_medicamento where id_precio = $1"]) {
     try {
       await central.query(sql, [actual.id_precio]);
@@ -231,7 +235,7 @@ try {
 } finally {
   link.estado = "online";
   // El medicamento de prueba queda inactivo: su historial de precios ya no se puede borrar.
-  await central.query("update medicamento set activo = false where id_medicamento = $1", [idMed]);
+  await desactivarMedicamentos("id_medicamento = $1", [idMed]);
   await local.query("update medicamento_ref set activo = false where id_medicamento = $1", [idMed]);
   server.close();
 }

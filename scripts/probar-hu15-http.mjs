@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { desactivarTiendaCentral, limpiarConsolidadoTienda } from "./lib/central.mjs";
 // Pruebas HTTP de HU-15: las rutas reales de app.mjs (métodos, Idempotency-Key, cuerpo, códigos).
 // Complementa probar-hu15.mjs, que llama las funciones directas. ESCRIBE en las bases del .env:
 // con URLs de Neon se niega a correr salvo PERMITIR_NEON=1 (rama de prueba). Correr con el API detenido.
@@ -85,7 +87,7 @@ try {
   check("reintento HTTP devuelve la misma tienda", repetida.status === 201 && repetida.data.tienda?.id_tienda === id);
   const otraData = await pedir("/api/central/tiendas", { method: "POST", token, key, body: { ...datos, ciudad: "Otra" } });
   check("misma clave con otros datos 409", otraData.status === 409 && otraData.data.codigo === "IDEMPOTENCY_CONFLICT");
-  const filas = await central.query("select count(*)::int as n from tienda where nombre = $1", [NOMBRE]);
+  const filas = await central.query("select count(*)::int as n from tienda where nombre = $1 and activa", [NOMBRE]);
   check("una sola fila tras reintentos", filas.rows[0].n === 1, String(filas.rows[0].n));
 
   const version = alta.data.tienda.version_tienda;
@@ -164,10 +166,9 @@ try {
 } finally {
   link.estado = "online";
   if (id) {
-    await central.query("delete from inventario_consolidado where id_tienda = $1", [id]);
-    await central.query("delete from umbral_stock where id_tienda = $1", [id]);
+    await limpiarConsolidadoTienda(id);
     await local.query("delete from tienda_ref where id_tienda = $1", [id]);
-    await central.query("delete from tienda where id_tienda = $1 and nombre = $2", [id, NOMBRE]);
+    await desactivarTiendaCentral(id);
   }
   server.close();
 }

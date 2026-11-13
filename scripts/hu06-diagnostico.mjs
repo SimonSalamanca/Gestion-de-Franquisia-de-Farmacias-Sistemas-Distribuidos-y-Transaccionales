@@ -1,3 +1,4 @@
+import "./lib/owner.mjs";
 import { central, local } from "../apps/api/db.mjs";
 
 const c = await central.query(

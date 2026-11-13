@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { desactivarMedicamentos, publicarAltaMedicamento, registrarPrecioCentral } from "./lib/central.mjs";
 // Pruebas de HU-08 por las rutas reales de app.mjs: cálculo exacto con impuestos por medicamento, pago combinado,
 // factura consecutiva sin saltos, venta atómica (todo o nada), FEFO, concurrencia, receta de controlados (HU-12),
 // venta sin conexión con el central y consolidado en el central.
@@ -65,11 +67,9 @@ async function crearMedicamento(sufijo, { precio, tasa = 0, receta = false }) {
      select id_medicamento from m`,
     [`HU08-${S}-${sufijo}`, `Prueba Ventas ${S}-${sufijo}`, receta, tasa],
   );
+  await publicarAltaMedicamento(r.rows[0].id_medicamento);
   if (precio != null) {
-    await central.query(
-      "insert into precio_medicamento (id_medicamento, precio, fecha_inicio_vigencia) values ($1, $2, now()::timestamp - interval '1 hour')",
-      [r.rows[0].id_medicamento, precio],
-    );
+    await registrarPrecioCentral({ idMedicamento: r.rows[0].id_medicamento, precio: precio });
   }
   return r.rows[0].id_medicamento;
 }
@@ -363,11 +363,15 @@ try {
     tiempos.push(Date.now() - t0);
   }
   const mediana = [...tiempos].sort((a, b) => a - b)[Math.floor(tiempos.length / 2)];
-  check("la venta completa se confirma en ≤ 3 s (mediana)", mediana <= 3000, `${mediana} ms (${tiempos.join(", ")})`);
+  // Decisión (docs/arquitectura/decision-rnf-05-latencia-venta.md): la meta de 3 s se mide aquí contra Neon en la nube desde una PC
+  // de desarrollo y queda en ~3,2 a 3,7 s; se acepta. Pasar de 3 s es un AVISO, no un fallo. Solo falla si supera el tope de regresión.
+  const TOPE_REGRESION_MS = 5000;
+  if (mediana > 3000) console.log("AVISO", `venta completa por encima de la meta de 3 s (RNF-05), aceptado por decisión documentada: ${mediana} ms`);
+  check(`la venta completa se confirma en ≤ ${TOPE_REGRESION_MS / 1000} s (mediana; meta 3 s, ver decisión RNF-05)`, mediana <= TOPE_REGRESION_MS, `${mediana} ms (${tiempos.join(", ")})`);
 } finally {
   link.estado = "online";
   // Los medicamentos de prueba quedan inactivos: sus facturas y precios ya no se pueden borrar.
-  await central.query("update medicamento set activo = false where codigo_interno like $1", [`HU08-${S}-%`]);
+  await desactivarMedicamentos("codigo_interno like $1", [`HU08-${S}-%`]);
   await local.query("update medicamento_ref set activo = false where codigo_interno like $1", [`HU08-${S}-%`]);
   server.close();
 }

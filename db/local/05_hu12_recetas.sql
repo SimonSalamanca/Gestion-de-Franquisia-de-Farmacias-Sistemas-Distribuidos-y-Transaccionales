@@ -10,7 +10,7 @@ ALTER TABLE receta_medicamento
         CONSTRAINT receta_medicamento_dispensada_check CHECK (cantidad_dispensada >= 0 AND cantidad_dispensada <= cantidad_autorizada);
 
 -- Un paciente por documento: registrar dos recetas del mismo paciente reutiliza su fila (los reintentos no duplican).
-CREATE UNIQUE INDEX IF NOT EXISTS uq_cliente_documento ON cliente (documento_identidad) WHERE documento_identidad IS NOT NULL;
+-- (La unicidad por documento pasó a documento_hmac en 15_datos_personales_cifrado.sql: el documento ya no se guarda en claro.)
 CREATE INDEX IF NOT EXISTS idx_receta_cliente ON receta (id_cliente);
 CREATE INDEX IF NOT EXISTS idx_detalle_factura_receta ON detalle_factura (id_receta) WHERE id_receta IS NOT NULL;
 

@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { crearMedicamentoHeredado, crearMedicamentoPrueba, desactivarMedicamentos, intentarCrearSinUmbral, registrarPrecioCentral } from "./lib/central.mjs";
 // Pruebas de HU-04 por las rutas reales de app.mjs: alertas de stock bajo y de caducidad, bloqueo automático de lotes
 // vencidos, panel ordenado por urgencia, umbrales independientes por producto y por tienda, y la regla de que ningún
 // producto activo opera sin umbral.
@@ -57,21 +59,11 @@ if (!proveedor) {
 
 // Medicamento de prueba con su umbral en cada tienda activa, creado en la misma transacción (la regla de HU-04).
 async function crearMedicamento(sufijo, { precio = null } = {}) {
-  const r = await central.query(
-    `with m as (insert into medicamento (codigo_interno, nombre_comercial, principio_activo)
-                values ($1, $2, 'prueba de alertas') returning id_medicamento),
-          u as (insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
-                select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
-     select id_medicamento from m`,
-    [`HU04-${S}-${sufijo}`, `Prueba Alertas ${S}-${sufijo}`],
-  );
+  const idMed = await crearMedicamentoPrueba({ codigo: `HU04-${S}-${sufijo}`, nombre: `Prueba Alertas ${S}-${sufijo}`, principio: "prueba de alertas" });
   if (precio != null) {
-    await central.query(
-      "insert into precio_medicamento (id_medicamento, precio, fecha_inicio_vigencia) values ($1, $2, now()::timestamp - interval '1 hour')",
-      [r.rows[0].id_medicamento, precio],
-    );
+    await registrarPrecioCentral({ idMedicamento: idMed, precio: precio });
   }
-  return r.rows[0].id_medicamento;
+  return idMed;
 }
 async function crearLote(idMed, sufijo, { cantidad, dias, estado = "DISPONIBLE" }) {
   return (await local.query(
@@ -100,36 +92,16 @@ try {
   check("logins demo", Boolean(general && cajero && adminTienda));
 
   // --- La regla: ningún producto activo opera sin umbral en una tienda activa
-  const sinUmbral = await central.query("insert into medicamento (codigo_interno, nombre_comercial, principio_activo) values ($1, $2, 'sin umbral') returning id_medicamento", [`HU04-${S}-N`, `Prueba Sin Umbral ${S}`]).then(
-    () => ({ ok: true }),
-    (error) => ({ ok: false, code: error.code, message: error.message }),
-  );
+  const sinUmbral = await intentarCrearSinUmbral({ tipo: "medicamento", codigo: `HU04-${S}-N`, nombre: `Prueba Sin Umbral ${S}` });
   check("un medicamento activo sin umbral no se puede crear (MEDICAMENTO_SIN_UMBRAL)", !sinUmbral.ok && sinUmbral.code === "23514" && sinUmbral.message.startsWith("MEDICAMENTO_SIN_UMBRAL"), sinUmbral.message);
   check("y no quedó guardado", (await contar(central, "select count(*) as n from medicamento where codigo_interno = $1", [`HU04-${S}-N`])) === 0);
-  const tiendaSin = await central.query("insert into tienda (nombre, direccion, ciudad, telefono, fecha_apertura, activa) values ($1, 'Calle 1', 'Bogotá', '6010000000', current_date, true)", [`HU04 Sin Umbrales ${S}`]).then(
-    () => ({ ok: true }),
-    (error) => ({ ok: false, code: error.code, message: error.message }),
-  );
+  const tiendaSin = await intentarCrearSinUmbral({ tipo: "tienda", nombre: `HU04 Sin Umbrales ${S}` });
   check("una tienda activa sin umbrales no se puede crear (TIENDA_SIN_UMBRALES)", !tiendaSin.ok && tiendaSin.message.startsWith("TIENDA_SIN_UMBRALES"), tiendaSin.message);
   check("la herramienta de depuración no encuentra productos sin umbral", execFileSync(process.execPath, ["scripts/depurar-umbrales.mjs"], { encoding: "utf8", env: process.env }).includes("Todos los medicamentos activos tienen umbral"));
 
   // Datos heredados que no cumplen la regla (se simulan apagando la restricción un instante): se listan y se dan de baja.
   async function heredado(sufijo, { unidades = 0 } = {}) {
-    const c = await central.connect();
-    try {
-      await c.query("begin");
-      await c.query("alter table medicamento disable trigger medicamento_con_umbral");
-      const r = await c.query("insert into medicamento (codigo_interno, nombre_comercial, principio_activo) values ($1, $2, 'heredado') returning id_medicamento", [`HU04-${S}-${sufijo}`, `Prueba Heredado ${S}-${sufijo}`]);
-      await c.query("alter table medicamento enable trigger medicamento_con_umbral");
-      if (unidades > 0) await c.query("insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion) values ($1, $2, $3, now())", [TIENDA, r.rows[0].id_medicamento, unidades]);
-      await c.query("commit");
-      return r.rows[0].id_medicamento;
-    } catch (error) {
-      await c.query("rollback");
-      throw error;
-    } finally {
-      c.release();
-    }
+    return crearMedicamentoHeredado({ codigo: `HU04-${S}-${sufijo}`, nombre: `Prueba Heredado ${S} ${sufijo}`, unidadesEnRed: unidades, idTienda: TIENDA });
   }
   const idH0 = await heredado("H0");
   const idH1 = await heredado("H1", { unidades: 12 });
@@ -316,7 +288,7 @@ try {
   await fijarLote(loteX, 40);
 } finally {
   link.estado = "online";
-  await central.query("update medicamento set activo = false where codigo_interno like $1", [`HU04-${S}-%`]);
+  await desactivarMedicamentos("codigo_interno like $1", [`HU04-${S}-%`]);
   await local.query("update medicamento_ref set activo = false where codigo_interno like $1", [`HU04-${S}-%`]);
   await local.query("select evaluar_alertas()").catch(() => {});
   server.close();

@@ -2,6 +2,7 @@ import { local } from "./db.mjs";
 import { conIdempotencia } from "./idempotencia.mjs";
 import { ErrorNegocio, conflicto, invalido, noEncontrado } from "./errores.mjs";
 import { auditar } from "./inventario/lotes.mjs";
+import { abrirDocumento, hmacDocumento, sellarDocumento } from "./datos-personales.mjs";
 
 // HU-12: receta médica antes de vender un medicamento que la requiere (RF-08, regla de negocio 6, RNF-02, RNF-10).
 // Todo ocurre en el nodo local: registrar y validar recetas funciona sin conexión con el central y no se
@@ -85,7 +86,7 @@ async function recetasDe(db, ids, completo) {
   if (ids.length === 0) return [];
   const cabecera = await db.query(
     `select r.id_receta, r.medico_prescriptor, r.fecha_emision, r.fecha_registro,
-            c.nombre as paciente, c.documento_identidad, c.telefono, c.correo,
+            c.nombre as paciente, c.documento_identidad, c.documento_cifrado, c.telefono, c.correo,
             e.nombre_completo as registrada_por,
             receta_vigente(r.fecha_emision) as vigente,
             (r.fecha_emision + (select dias_vigencia from politica_receta where id = 1))::text as vence,
@@ -109,13 +110,13 @@ async function recetasDe(db, ids, completo) {
   );
   const cabeceras = new Map(cabecera.rows.map((fila) => [fila.id_receta, fila]));
   return ids.filter((id) => cabeceras.has(id)).map((id) => {
-    const { documento_identidad: documento, telefono, correo, ...resto } = cabeceras.get(id);
+    const { documento_identidad: enmascarado, documento_cifrado: cifrado, telefono, correo, ...resto } = cabeceras.get(id);
     const medicamentos = lineas.rows
       .filter((l) => l.id_receta === id)
       .map(({ id_receta: _id, ...l }) => ({ ...l, saldo: l.cantidad_autorizada - l.cantidad_dispensada }));
     return {
       ...resto,
-      paciente_documento: completo ? documento : enmascarar(documento),
+      paciente_documento: completo && cifrado ? abrirDocumento(cifrado) : enmascarado,
       ...(completo ? { paciente_telefono: telefono, paciente_correo: correo } : {}),
       datos_completos: completo,
       // Receta del central: sirve mientras la reserva esté vigente y no se haya dispensado (la baja la quema). Manual: su vigencia.
@@ -168,14 +169,16 @@ export async function registrarReceta(sesion, key, body) {
 
     // Un paciente por documento: dos recetas (o un reintento) reutilizan su fila.
     const { nombre, documento, telefono, correo } = datos.cliente;
+    // El documento se guarda cifrado (docs/seguridad/datos-personales.md): en la fila solo queda enmascarado.
+    const sellado = sellarDocumento(documento);
     let cliente = await client.query(
-      `insert into cliente (nombre, documento_identidad, telefono, correo) values ($1, $2, $3, $4)
-       on conflict (documento_identidad) where documento_identidad is not null do nothing
+      `insert into cliente (nombre, documento_identidad, documento_hmac, documento_cifrado, telefono, correo) values ($1, $2, $3, $4, $5, $6)
+       on conflict (documento_hmac) where documento_hmac is not null do nothing
        returning id_cliente`,
-      [nombre, documento, telefono, correo],
+      [nombre, sellado.paciente_documento, sellado.documento_hmac, sellado.documento_cifrado, telefono, correo],
     );
     if (cliente.rowCount === 0) {
-      cliente = await client.query("select id_cliente from cliente where documento_identidad = $1", [documento]);
+      cliente = await client.query("select id_cliente from cliente where documento_hmac = $1", [sellado.documento_hmac]);
     }
     const receta = await client.query(
       `insert into receta (medico_prescriptor, fecha_emision, id_cliente, id_empleado_registro)
@@ -219,7 +222,7 @@ export async function listarRecetas(query) {
      from receta r
      left join cliente c on c.id_cliente = r.id_cliente
      where ($1::text is null or lower(r.medico_prescriptor) like $1 escape '\\' or lower(c.nombre) like $1 escape '\\')
-       and ($2::text is null or c.documento_identidad = $2)
+       and ($2::text is null or c.documento_hmac = $2)
        and ($3::int is null or exists (select 1 from receta_medicamento x where x.id_receta = r.id_receta and x.id_medicamento = $3))
        and (not $4::boolean or (
               case when r.origen = 'CENTRAL'
@@ -232,7 +235,7 @@ export async function listarRecetas(query) {
                 and ($3::int is null or x.id_medicamento = $3))))
      order by r.id_receta desc
      limit ${MAX_RESULTADOS}`,
-    [patron, documento, idMedicamento, soloUtilizables],
+    [patron, documento ? hmacDocumento(documento) : null, idMedicamento, soloUtilizables],
   );
   return { recetas: await recetasDe(local, filas.rows.map((f) => f.id_receta), false) };
 }

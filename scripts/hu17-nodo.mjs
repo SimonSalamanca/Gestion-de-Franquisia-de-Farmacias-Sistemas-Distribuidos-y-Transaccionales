@@ -1,3 +1,4 @@
+import "./lib/owner.mjs";
 // Segunda tienda para la prueba de HU-17 (scripts/probar-hu17.mjs). Es el MISMO código del API (migración, réplica, outbox,
 // handlers), en otro proceso y con otra identidad (LOCAL_TIENDA_ID), y con su base en un esquema propio (HU17_ESQUEMA) de la
 // misma base local: así la prueba tiene dos tiendas reales sin crear otra base en Neon. La prueba la maneja por IPC.
@@ -17,9 +18,11 @@ await admin.connect();
 await admin.query(`create schema if not exists ${esquema}`);
 await admin.end();
 
-const { local, central, withTx } = await import("../apps/api/db.mjs");
+const { local, central, localMigracion, withTx } = await import("../apps/api/db.mjs");
 // Toda conexión de esta tienda trabaja en su esquema (y solo en él: pg_catalog siempre está disponible).
 local.on("connect", (client) => client.query(`set search_path to ${esquema}`).catch(() => {}));
+// Las migraciones de este nodo usan el mismo esquema.
+localMigracion.on("connect", (client) => client.query(`set search_path to ${esquema}`).catch(() => {}));
 
 const { migrate } = await import("../apps/api/migrate.mjs");
 const { link, pullReplica, flushOutbox } = await import("../apps/api/sync.mjs");

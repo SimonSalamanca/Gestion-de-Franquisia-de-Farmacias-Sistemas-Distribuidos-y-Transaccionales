@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { desactivarMedicamentos, publicarAltaMedicamento, registrarPrecioCentral } from "./lib/central.mjs";
 // Pruebas de HU-09 por las rutas reales de app.mjs: búsqueda de facturas por cliente, número y fechas, historial de un
 // cliente, reimpresión idéntica al original (y auditada), datos personales enmascarados, paginación y operación sin
 // conexión con el central. ESCRIBE en las bases del .env: con URLs de Neon se niega a correr salvo PERMITIR_NEON=1.
@@ -58,7 +60,8 @@ async function crearMedicamento(sufijo, { precio, tasa = 0, receta = false }) {
      select id_medicamento from m`,
     [`HU09-${S}-${sufijo}`, `Prueba Historial ${S}-${sufijo}`, receta, tasa],
   );
-  await central.query("insert into precio_medicamento (id_medicamento, precio, fecha_inicio_vigencia) values ($1, $2, now()::timestamp - interval '1 hour')", [r.rows[0].id_medicamento, precio]);
+  await publicarAltaMedicamento(r.rows[0].id_medicamento);
+  await registrarPrecioCentral({ idMedicamento: r.rows[0].id_medicamento, precio });
   return r.rows[0].id_medicamento;
 }
 const idB = await crearMedicamento("B", { precio: "2500.00", tasa: 19 });
@@ -165,7 +168,7 @@ try {
   check("ver la factura: idéntica a la emitida", vista.status === 200 && JSON.stringify(vista.data) === JSON.stringify(original));
   check("ver no deja huella de reimpresión", (await contar(local, "select count(*) as n from registro_actividad where accion = 'FACTURA_REIMPRIMIR' and id_entidad_afectada = $1", [original.id_factura])) === 0);
   // El precio cambia después de emitir: la reimpresión conserva el precio original.
-  await central.query("insert into precio_medicamento (id_medicamento, precio, fecha_inicio_vigencia) values ($1, '9999.00', now()::timestamp)", [idC]);
+  await registrarPrecioCentral({ idMedicamento: idC, precio: "9999.00", inicioSql: "now()::timestamp" });
   await pullReplica();
   const r1 = await pedir(`/api/local/historial/facturas/${original.id_factura}/reimprimir`, { method: "POST", token: cajero });
   const r2 = await pedir(`/api/local/historial/facturas/${original.id_factura}/reimprimir`, { method: "POST", token: adminTienda });
@@ -232,7 +235,7 @@ try {
   check("la reimpresión offline quedó en la auditoría local (sube al central al reconectar)", (await contar(local, "select count(*) as n from registro_actividad where accion = 'FACTURA_REIMPRIMIR' and id_entidad_afectada = $1", [original.id_factura])) === 3);
 } finally {
   link.estado = "online";
-  await central.query("update medicamento set activo = false where codigo_interno like $1", [`HU09-${S}-%`]);
+  await desactivarMedicamentos("codigo_interno like $1", [`HU09-${S}-%`]);
   await local.query("update medicamento_ref set activo = false where codigo_interno like $1", [`HU09-${S}-%`]);
   server.close();
 }

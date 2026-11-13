@@ -1,3 +1,4 @@
+import "./lib/owner.mjs";
 // HU-04: ningún medicamento activo puede operar sin umbral (stock mínimo y días de aviso) en una tienda activa, o el sistema
 // de alertas no lo vigilaría. Este script revisa el nodo central del .env:
 //   npm run db:depurar-umbrales                       lista los que no cumplen (no cambia nada)
@@ -26,6 +27,7 @@ if (sin.length === 0) {
     const omitidos = sin.length - aBaja.length;
     await withTx(central, async (client) => {
       for (const m of aBaja) {
+        // guardia-permitido: publica su evento en la misma transacción (MEDICAMENTO_UPSERT, abajo)
         const fila = await client.query(
           `update medicamento set activo = false where id_medicamento = $1 and activo
            returning id_medicamento, codigo_interno, nombre_comercial, principio_activo, id_categoria,

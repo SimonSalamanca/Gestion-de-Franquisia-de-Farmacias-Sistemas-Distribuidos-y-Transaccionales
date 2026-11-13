@@ -2,7 +2,7 @@
 
 Estado: **IMPLEMENTADA** (2026-11-04): API, esquemas en `db/local/07_hu08_ventas.sql` y `db/central/08_hu08_ventas.sql`, pantalla de caja en "Ventas y recetas" y pruebas en verde (ver "Pruebas"). Pendiente el veredicto del auditor (GPT-5.6 Luna), igual que HU-03, HU-07 y HU-12.
 
-Requerimientos: **RF-06** (venta y factura), reglas de negocio 1, 2 y 3, **RNF-04** (autonomía local), **RNF-05** (venta completa en ≤ 3 s), **RNF-06** (concurrencia), **RNF-10**, **RNF-12** (integridad financiera).
+Requerimientos: **RF-06** (venta y factura), reglas de negocio 1, 2 y 3, **RNF-04** (autonomía local), **RNF-05** (venta completa en ≤ 3 s; la medición contra Neon queda en 3,2 a 3,7 s y se aceptó: ver `docs/arquitectura/decision-rnf-05-latencia-venta.md`), **RNF-06** (concurrencia), **RNF-10**, **RNF-12** (integridad financiera).
 
 ## Historia
 

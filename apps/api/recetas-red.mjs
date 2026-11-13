@@ -5,6 +5,7 @@ import { ErrorNegocio, conflicto, invalido } from "./errores.mjs";
 import { enCentral } from "./empleados.mjs";
 import { auditar } from "./inventario/lotes.mjs";
 import { recetaDe } from "./recetas.mjs";
+import { abrirDocumento, sellarDocumento } from "./datos-personales.mjs";
 
 // HU-12, validación contra el sistema de salud (simulada). El nodo central hace de EPS: guarda las recetas emitidas
 // con su código, confirma que son auténticas y vigentes, las reserva para UNA tienda y las da de baja cuando
@@ -126,10 +127,13 @@ export async function emitirReceta(sesion, key, body) {
     const codigoFinal = codigo ?? `RX-${crypto.randomInt(1_000_000_000, 9_999_999_999)}`;
     let creada;
     try {
+      // El documento se guarda cifrado (docs/seguridad/datos-personales.md): en la fila solo queda enmascarado.
+      const sellado = sellarDocumento(documento);
       creada = await client.query(
-        `insert into receta_emitida (codigo, paciente_nombre, paciente_documento, medico_prescriptor, fecha_emision, id_empleado_emisor)
-         values ($1, $2, $3, $4, $5::date, $6) returning id_receta_emitida`,
-        [codigoFinal, nombre, documento, medico, fecha, sesion.id_empleado],
+        `insert into receta_emitida (codigo, paciente_nombre, paciente_documento, medico_prescriptor, fecha_emision, id_empleado_emisor,
+                                      documento_hmac, documento_cifrado)
+         values ($1, $2, $3, $4, $5::date, $6, $7, $8) returning id_receta_emitida`,
+        [codigoFinal, nombre, sellado.paciente_documento, medico, fecha, sesion.id_empleado, sellado.documento_hmac, sellado.documento_cifrado],
       );
     } catch (error) {
       if (error.code === "23505") throw conflicto("CODIGO_DUPLICADO", `Ya existe una receta con el código ${codigoFinal}`, { campo: "codigo" });
@@ -232,7 +236,9 @@ export async function reservarEnCentral(client, { idTienda, idEmpleado, codigo }
     medico_prescriptor: r.medico_prescriptor,
     fecha_emision: r.fecha_emision,
     paciente_nombre: r.paciente_nombre,
-    paciente_documento: r.paciente_documento,
+    // La copia de la tienda que dispensa necesita el documento real para su registro del paciente. Solo sale por este camino
+    // (reserva con código válido); el resto de respuestas lo muestran enmascarado.
+    paciente_documento: abrirDocumento(r.documento_cifrado),
     reservada_hasta: reserva.rows[0].reservada_hasta,
     medicamentos: lineas.rows,
   };
@@ -313,12 +319,13 @@ async function copiarALocal(client, sesion, reserva) {
   if (presentes.rowCount !== ids.length) {
     throw conflicto("MEDICAMENTO_NO_SINCRONIZADO", "Algún medicamento de la receta aún no llega a esta tienda; intente de nuevo tras la sincronización");
   }
+  const sellado = sellarDocumento(reserva.paciente_documento);
   let cliente = await client.query(
-    `insert into cliente (nombre, documento_identidad) values ($1, $2)
-     on conflict (documento_identidad) where documento_identidad is not null do nothing returning id_cliente`,
-    [reserva.paciente_nombre, reserva.paciente_documento],
+    `insert into cliente (nombre, documento_identidad, documento_hmac, documento_cifrado) values ($1, $2, $3, $4)
+     on conflict (documento_hmac) where documento_hmac is not null do nothing returning id_cliente`,
+    [reserva.paciente_nombre, sellado.paciente_documento, sellado.documento_hmac, sellado.documento_cifrado],
   );
-  if (cliente.rowCount === 0) cliente = await client.query("select id_cliente from cliente where documento_identidad = $1", [reserva.paciente_documento]);
+  if (cliente.rowCount === 0) cliente = await client.query("select id_cliente from cliente where documento_hmac = $1", [sellado.documento_hmac]);
   const receta = await client.query(
     `insert into receta (medico_prescriptor, fecha_emision, id_cliente, id_empleado_registro, codigo_receta, origen, reservada_hasta)
      values ($1, $2::date, $3, $4, $5, 'CENTRAL', $6)

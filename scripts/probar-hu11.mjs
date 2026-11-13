@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { desactivarMedicamentos, publicarAltaMedicamento, registrarPrecioCentral } from "./lib/central.mjs";
 // Pruebas de HU-11 por las rutas reales de app.mjs: totales del periodo por método de pago y por empleado, conteo contra lo
 // calculado, cierre bloqueado con diferencia sin justificar, cierre inmutable y auditado, caja cerrada que rechaza ventas
 // hasta abrir un nuevo periodo, y la carrera entre ventas en curso y el cierre. También sin conexión con el central.
@@ -59,8 +61,9 @@ const creado = await central.query(
    select id_medicamento from m`,
   [`HU11-${S}`, `Prueba Cierre ${S}`],
 );
+await publicarAltaMedicamento(creado.rows[0].id_medicamento);
 const idMed = creado.rows[0].id_medicamento;
-await central.query("insert into precio_medicamento (id_medicamento, precio, fecha_inicio_vigencia) values ($1, 1000, now()::timestamp - interval '1 hour')", [idMed]);
+await registrarPrecioCentral({ idMedicamento: idMed, precio: 1000 });
 await migrate();
 await pullReplica();
 const idLote = (await local.query(
@@ -349,7 +352,7 @@ try {
   // Las ventas y devoluciones de la prueba esperan en el outbox: se envían al central para no dejar eventos pendientes que
   // otras pruebas (que miden el consolidado del central con sumas exactas) enviarían junto con los suyos.
   await flushOutbox(1).catch((error) => console.error("flushOutbox:", error.message));
-  await central.query("update medicamento set activo = false where id_medicamento = $1", [idMed]);
+  await desactivarMedicamentos("id_medicamento = $1", [idMed]);
   await local.query("update medicamento_ref set activo = false where id_medicamento = $1", [idMed]);
   server.close();
 }

@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 const PEPPER_DEV = "farmahub-dev-pepper";
+const DATOS_DEV = "farmahub-dev-datos-personales-no-usar-en-produccion";
 
 // Lee .env; las variables del proceso tienen prioridad sobre el archivo.
 export function loadEnv() {
@@ -37,6 +38,12 @@ function entero(env, key, fallback) {
   return value;
 }
 
+// Rol de aplicación (datos sin DDL, docs/seguridad/datos-personales.md, fase 5). Si no está configurado, la aplicación usa la
+// misma conexión que las migraciones (compatibilidad con bases ya existentes).
+function urlAppDe(env, nodo, respaldo) {
+  return env[`${nodo}_DATABASE_URL_UNPOOLED_APP`] || env[`${nodo}_DATABASE_URL_APP`] || respaldo;
+}
+
 function urlDe(env, nodo) {
   const url = env[`${nodo}_DATABASE_URL_UNPOOLED`] || env[`${nodo}_DATABASE_URL`];
   if (!url || url.includes("USER:PASSWORD")) {
@@ -55,7 +62,13 @@ export const config = {
   tiendaId: entero(env, "LOCAL_TIENDA_ID", 1),
   centralUrl: urlDe(env, "CENTRAL"),
   localUrl: urlDe(env, "LOCAL"),
+  // Migraciones y mantenimiento: dueño de la base (DDL). Aplicación: rol de solo datos, si está configurado.
+  centralAppUrl: urlAppDe(env, "CENTRAL", urlDe(env, "CENTRAL")),
+  localAppUrl: urlAppDe(env, "LOCAL", urlDe(env, "LOCAL")),
   pepper: env.AUTH_PEPPER || PEPPER_DEV,
+  // Clave de cifrado del documento de los pacientes en el central (docs/seguridad/datos-personales.md). Si se pierde, los
+  // documentos cifrados no se pueden recuperar.
+  datosClave: env.DATOS_CLAVE || DATOS_DEV,
   corsOrigins: (env.CORS_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173")
     .split(",")
     .map((origin) => origin.trim())
@@ -76,6 +89,10 @@ export const avisos = [];
 if (config.pepper === PEPPER_DEV) {
   if (produccion) throw new Error("AUTH_PEPPER es obligatorio en producción.");
   avisos.push("AUTH_PEPPER no está definido: se usa el valor de desarrollo.");
+}
+if (config.datosClave === DATOS_DEV) {
+  if (produccion) throw new Error("DATOS_CLAVE es obligatoria en producción.");
+  avisos.push("DATOS_CLAVE no está definida: se usa la clave de desarrollo.");
 }
 if (produccion && config.seedDemo) avisos.push("SEED_DEMO activo en producción: hay cuentas con contraseña conocida.");
 if (config.simulacion) avisos.push("Simulación de conectividad habilitada (FARMAHUB_SIMULACION).");

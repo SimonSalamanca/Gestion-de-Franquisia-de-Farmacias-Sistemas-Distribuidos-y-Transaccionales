@@ -1,3 +1,4 @@
+import "./lib/owner.mjs";
 // Pruebas de HU-01 (búsqueda, filtros, existencias en la red, STOCK_SNAPSHOT, offline y RNF-05).
 // ESCRIBE en las bases del .env (migración, datos demo, sesiones y auditoría): ejecutar contra bases
 // de prueba, nunca contra la base principal. Con URLs de Neon se niega a correr salvo PERMITIR_NEON=1.

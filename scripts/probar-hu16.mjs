@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { crearEmpleadoPrueba, desactivarEmpleado, desactivarMedicamentos, publicarAltaMedicamento, registrarPrecioCentral } from "./lib/central.mjs";
 // Pruebas de HU-16 (vista consolidada de la red) por las rutas reales de app.mjs: consolidación periódica (foto completa,
 // sin acumular sin conexión, aplicación idempotente y monótona), frescura por tienda (al día, desactualizada, sin datos),
 // ventas por categoría con ventas y devoluciones, filtros por tienda, fechas y categoría, inventario por producto,
@@ -81,10 +83,8 @@ async function crearMedicamento(sufijo, { precio, tasa, categoria }) {
      select id_medicamento from m`,
     [`HU16-${S}-${sufijo}`, `Prueba Vista ${S}-${sufijo}`, categoria, tasa],
   );
-  await central.query(
-    "insert into precio_medicamento (id_medicamento, precio, fecha_inicio_vigencia) values ($1, $2, now()::timestamp - interval '1 hour')",
-    [r.rows[0].id_medicamento, precio],
-  );
+  await publicarAltaMedicamento(r.rows[0].id_medicamento);
+  await registrarPrecioCentral({ idMedicamento: r.rows[0].id_medicamento, precio: precio });
   return r.rows[0].id_medicamento;
 }
 const crearLote = async (idMed, sufijo, cantidad) =>
@@ -117,11 +117,7 @@ try {
   // Como la app: el rol se publica a las tiendas antes que la cuenta que lo usa (si no, la réplica de la cuenta falla).
   await central.query("select append_replica_evento(null, 'ROL_UPSERT', 1, jsonb_build_object('id_rol', id_rol, 'nombre', nombre)) from rol where id_rol = $1", [rolControl]);
   const usuarioControl = `hu16.control.${S}`.toLowerCase();
-  idCuentaControl = (await central.query(
-    `insert into empleado (id_tienda, id_rol, nombre_completo, usuario, contrasena_hash, correo, activo, version_credencial)
-     values (1, $1, 'Prueba Control HU16', $2, $3, null, true, 1) returning id_empleado`,
-    [rolControl, usuarioControl, hashPassword("Farma123")],
-  )).rows[0].id_empleado;
+  idCuentaControl = await crearEmpleadoPrueba({ usuario: usuarioControl, nombre: "Prueba Control HU16", idRol: rolControl, hash: hashPassword("Farma123") });
   const tokenControl = await entrar("central", usuarioControl);
   const denegadosAntes = Number((await central.query("select count(*) as n from registro_actividad_central where accion = 'ACCESO_DENEGADO' and id_empleado = $1", [idCuentaControl])).rows[0].n);
   const sinPermiso = await pedir("/api/central/red/consolidado", { token: tokenControl });
@@ -192,6 +188,7 @@ try {
     const r = await vistaConsolidada({}, c);
     const t = r.tiendas.find((x) => x.id_tienda === nueva);
     check("tienda que nunca envió información: SIN_DATOS, no ceros", t?.frescura.estado === "SIN_DATOS" && r.frescura.sin_datos.some((x) => x.id_tienda === nueva));
+    // guardia-permitido: transacción que se revierte (no deja cambios)
     await c.query("update tienda set activa = false where id_tienda = $1", [TIENDA]);
     const sin = await vistaConsolidada({}, c);
     check("una tienda desactivada no aparece", !sin.tiendas.some((x) => x.id_tienda === TIENDA));
@@ -336,9 +333,9 @@ try {
   }
 } finally {
   link.estado = "online";
-  await central.query("update medicamento set activo = false where codigo_interno like $1", [`HU16-${S}-%`]);
+  await desactivarMedicamentos("codigo_interno like $1", [`HU16-${S}-%`]);
   await local.query("update medicamento_ref set activo = false where codigo_interno like $1", [`HU16-${S}-%`]);
-  if (idCuentaControl) await central.query("update empleado set activo = false, fecha_baja = now() where id_empleado = $1", [idCuentaControl]);
+  if (idCuentaControl) await desactivarEmpleado(idCuentaControl);
   server.close();
 }
 

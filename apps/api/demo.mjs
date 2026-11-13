@@ -1,6 +1,7 @@
 import { central, local, withTx } from "./db.mjs";
 import { registrarLote } from "./inventario/lotes.mjs";
 import { config } from "./config.mjs";
+import { sellarDocumento } from "./datos-personales.mjs";
 import { completarUmbrales, publicarUmbralesPendientes } from "./umbrales.mjs";
 
 // Datos de demostración del sprint 1 (SEED_DEMO). Son datos, no estructura, y todo es idempotente.
@@ -208,10 +209,11 @@ export async function seedRecetasEmitidasDemo() {
   await withTx(central, async (client) => {
     const ids = await idsPorCodigo(client, "medicamento");
     for (const [codigo, paciente, documento, medico, dias, lineas] of RECETAS_EMITIDAS) {
+      const sellado = sellarDocumento(documento);
       const creada = await client.query(
-        `insert into receta_emitida (codigo, paciente_nombre, paciente_documento, medico_prescriptor, fecha_emision)
-         values ($1, $2, $3, $4, current_date - $5::int) on conflict (codigo) do nothing returning id_receta_emitida`,
-        [codigo, paciente, documento, medico, dias],
+        `insert into receta_emitida (codigo, paciente_nombre, paciente_documento, medico_prescriptor, fecha_emision, documento_hmac, documento_cifrado)
+         values ($1, $2, $3, $4, current_date - $5::int, $6, $7) on conflict (codigo) do nothing returning id_receta_emitida`,
+        [codigo, paciente, sellado.paciente_documento, medico, dias, sellado.documento_hmac, sellado.documento_cifrado],
       );
       if (creada.rowCount === 0) continue;
       for (const [medicamento, cantidad] of lineas) {

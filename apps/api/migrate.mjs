@@ -1,10 +1,12 @@
 import fs from "fs";
 import { publicarUmbralesPendientes } from "./umbrales.mjs";
 import path from "path";
-import { central, local, runtime } from "./db.mjs";
+// Las migraciones usan el dueño de la base (DDL). La aplicación usa el rol de solo datos (db.mjs).
+import { centralMigracion as central, localMigracion as local, runtime } from "./db.mjs";
 import { config, ROOT } from "./config.mjs";
 import { hashPassword } from "./crypto.mjs";
 import { seedCatalogoDemo, seedImpuestosDemo, seedRecetasEmitidasDemo, seedRedDemo } from "./demo.mjs";
+import { sellarDocumento } from "./datos-personales.mjs";
 
 const dbDir = path.join(ROOT, "db");
 
@@ -50,6 +52,32 @@ export function scriptsDe(nodo) {
     .map((file) => ({ file, base: file.startsWith("00_"), ruta: path.join(carpeta, file) }));
 }
 
+// Rol de aplicación (docs/seguridad/datos-personales.md, fase 5): solo datos, sin DDL ni TRUNCATE. Las tablas de auditoría y
+// de cierres son append-only también para él (además de los disparadores de cada tabla).
+const ROL_APP = "farmahub_datos";
+const SOLO_AGREGAR = {
+  central: ["registro_actividad_central", "replica_evento", "inbox_sync", "auditoria_tienda"],
+  local: [
+    "registro_actividad", "cierre_caja", "cierre_caja_metodo_pago", "cierre_caja_empleado", "apertura_caja", "recepcion",
+    "detalle_recepcion", "diferencia_recepcion", "movimiento_inventario", "detalle_factura", "factura_metodo_pago", "devolucion_pago",
+  ],
+};
+
+// Vuelve a aplicar los permisos después de cada migración (así cubren las tablas nuevas). Si el rol no existe, no hace nada.
+async function concederRolAplicacion(client, nodo) {
+  const existe = await client.query("select 1 from pg_roles where rolname = $1", [ROL_APP]);
+  if (existe.rowCount === 0) return false;
+  await client.query(`grant usage on schema public to ${ROL_APP}`);
+  await client.query(`grant select, insert, update, delete on all tables in schema public to ${ROL_APP}`);
+  await client.query(`grant usage, select on all sequences in schema public to ${ROL_APP}`);
+  await client.query(`grant execute on all functions in schema public to ${ROL_APP}`);
+  for (const tabla of SOLO_AGREGAR[nodo]) {
+    const cubre = await client.query("select to_regclass($1) is not null as ok", [tabla]);
+    if (cubre.rows[0].ok) await client.query(`revoke update, delete, truncate on ${tabla} from ${ROL_APP}`);
+  }
+  return true;
+}
+
 async function aplicarScripts(nodo) {
   const { pool, tablaBase } = NODOS[nodo];
   const client = await pool.connect();
@@ -64,6 +92,7 @@ async function aplicarScripts(nodo) {
       await client.query(fs.readFileSync(script.ruta, "utf8"));
       aplicados.push(script.file);
     }
+    await concederRolAplicacion(client, nodo);
     return aplicados;
   } finally {
     await client.query("select pg_advisory_unlock($1)", [LOCK_MIGRACION]).catch(() => {});
@@ -387,7 +416,40 @@ export async function migrate({ log = () => {} } = {}) {
   if (existe && config.seedDemo) await seedImpuestosDemo();
   if (existe && config.seedDemo) await seedRedDemo(idTienda);
   if (existe && config.seedDemo) await seedRecetasEmitidasDemo();
+  // Datos personales (docs/seguridad/datos-personales.md): las recetas anteriores a la clave se cifran una sola vez.
+  if (existe) await cifrarDocumentosCentral();
+  await cifrarDocumentosCliente();
   return idTienda;
+}
+
+// Cifra el documento de las recetas emitidas que todavía lo tienen en claro. Idempotente: solo toca filas sin valor cifrado.
+async function cifrarDocumentosCentral() {
+  const pendientes = await central.query(
+    "select id_receta_emitida, paciente_documento from receta_emitida where documento_cifrado is null order by id_receta_emitida",
+  );
+  for (const fila of pendientes.rows) {
+    const sellado = sellarDocumento(fila.paciente_documento);
+    await central.query(
+      "update receta_emitida set paciente_documento = $2, documento_hmac = $3, documento_cifrado = $4 where id_receta_emitida = $1 and documento_cifrado is null",
+      [fila.id_receta_emitida, sellado.paciente_documento, sellado.documento_hmac, sellado.documento_cifrado],
+    );
+  }
+  return pendientes.rowCount;
+}
+
+// Igual en la tienda: el documento de cada cliente queda enmascarado y el valor real cifrado. Idempotente.
+async function cifrarDocumentosCliente() {
+  const pendientes = await local.query(
+    "select id_cliente, documento_identidad from cliente where documento_identidad is not null and documento_cifrado is null order by id_cliente",
+  );
+  for (const fila of pendientes.rows) {
+    const sellado = sellarDocumento(fila.documento_identidad);
+    await local.query(
+      "update cliente set documento_identidad = $2, documento_hmac = $3, documento_cifrado = $4 where id_cliente = $1 and documento_cifrado is null",
+      [fila.id_cliente, sellado.paciente_documento, sellado.documento_hmac, sellado.documento_cifrado],
+    );
+  }
+  return pendientes.rowCount;
 }
 
 async function centralTienda(idTienda) {

@@ -1,3 +1,4 @@
+import "./lib/owner.mjs";
 // Prueba de punta a punta del flujo de stock entre el nodo local de la tienda y el nodo central
 // (HU-01 criterio 4, HU-02 y RNF-04): un movimiento en la tienda llega a inventario_consolidado por el
 // ciclo real de sincronización del API, y lo hecho sin conexión llega al reconectar.

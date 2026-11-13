@@ -1,9 +1,11 @@
+import "./lib/owner.mjs";
 // Pruebas de HU-12 por las rutas reales de app.mjs: receta obligatoria para medicamentos controlados, validación,
 // protección de datos del paciente, auditoría, inmutabilidad y la garantía de la base sobre detalle_factura.
 // ESCRIBE en las bases del .env: con URLs de Neon se niega a correr salvo PERMITIR_NEON=1 (rama de prueba).
 // Correr con el API detenido. Las recetas y pacientes de prueba son permanentes (la receta no se borra:
 // es parte de la auditoría), con documentos únicos por corrida. Las facturas viven en transacciones que se revierten.
 import crypto from "crypto";
+import { hmacDocumento } from "../apps/api/datos-personales.mjs";
 import { config } from "../apps/api/config.mjs";
 
 if ([config.centralUrl, config.localUrl].some((url) => url.includes("neon.tech")) && process.env.PERMITIR_NEON !== "1") {
@@ -150,7 +152,7 @@ try {
   check("una sola receta tras los reintentos", (await contar("select count(*) as n from receta where medico_prescriptor = $1", [medico])) === 1);
   const otraDelMismo = await pedir("/api/local/recetas", { method: "POST", token: cajero, key: nuevaKey(), body: await receta(hoy, datosA, [{ id_medicamento: idControlado2, cantidad: 2 }]) });
   check("otra receta del mismo paciente 201", otraDelMismo.status === 201);
-  check("el paciente no se duplica (un cliente por documento)", (await contar("select count(*) as n from cliente where documento_identidad = $1", [datosA.documento_identidad])) === 1);
+  check("el paciente no se duplica (un cliente por documento)", (await contar("select count(*) as n from cliente where documento_hmac = $1", [hmacDocumento(datosA.documento_identidad)])) === 1);
 
   // --- Criterio 4: auditoría con el detalle de la receta, sin datos del paciente
   const auditoria = await local.query("select accion, entidad_afectada, detalle, id_empleado from registro_actividad where accion = 'RECETA_REGISTRAR' and id_entidad_afectada = $1", [idA]);
@@ -180,7 +182,7 @@ try {
   check("con receta válida y saldo: puede continuar", conReceta.puede_continuar && estadoDe(conReceta, idControlado) === "OK");
   check("pedir más de lo autorizado: RECETA_SALDO", estadoDe(await validar({ id_receta: idA, lineas: [{ id_medicamento: idControlado, cantidad: 4 }] }), idControlado) === "RECETA_SALDO");
   check("la receta de otro medicamento no sirve: RECETA_INVALIDA", estadoDe(await validar({ id_receta: idA, lineas: [{ id_medicamento: idControlado2, cantidad: 1 }] }), idControlado2) === "RECETA_INVALIDA");
-  const clienteA = (await local.query("select id_cliente from cliente where documento_identidad = $1", [datosA.documento_identidad])).rows[0].id_cliente;
+  const clienteA = (await local.query("select id_cliente from cliente where documento_hmac = $1", [hmacDocumento(datosA.documento_identidad)])).rows[0].id_cliente;
   check("receta de otro paciente: RECETA_CLIENTE", estadoDe(await validar({ id_receta: idA, id_cliente: clienteA + 100000, lineas: [{ id_medicamento: idControlado, cantidad: 1 }] }), idControlado) === "RECETA_CLIENTE");
   check("receta inexistente: RECETA_INVALIDA", estadoDe(await validar({ id_receta: 99999999, lineas: [{ id_medicamento: idControlado, cantidad: 1 }] }), idControlado) === "RECETA_INVALIDA");
   check("líneas vacías 400", (await pedir("/api/local/recetas/validar", { method: "POST", token: cajero, body: { lineas: [] } })).status === 400);
