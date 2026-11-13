@@ -6,7 +6,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      "/api": "http://localhost:4000",
+      // Por defecto, el nodo de la tienda 1. Para otro nodo local: FARMAHUB_API=http://localhost:4001 npm run dev
+      "/api": process.env.FARMAHUB_API || "http://localhost:4000",
     },
   },
 });

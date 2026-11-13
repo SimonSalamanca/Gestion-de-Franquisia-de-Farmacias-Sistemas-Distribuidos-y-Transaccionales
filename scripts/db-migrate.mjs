@@ -1,3 +1,4 @@
+import "./lib/owner.mjs";
 // Aplica los scripts de db/central y db/local a las bases del .env y hace la primera sincronización,
 // lo mismo que hace la API al arrancar (incluidos los datos demo si SEED_DEMO está activo).
 import { central, local } from "../apps/api/db.mjs";

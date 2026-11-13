@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { vencerReservaReceta } from "./lib/central.mjs";
 // Pruebas de HU-12 (validación de la receta contra el nodo central, simulación de la EPS): emisión, validación por
 // código, reserva, competencia entre tiendas, liberación, baja por el outbox, conflictos y comportamiento sin conexión.
 // ESCRIBE en las bases del .env: con URLs de Neon se niega a correr salvo PERMITIR_NEON=1 (rama de prueba).
@@ -176,7 +178,7 @@ try {
   // --- Reserva vencida: la otra tienda puede tomarla
   const codigo4 = `HU12T-${S}-4`;
   await validar(codigo4);
-  await central.query("update receta_emitida set reservada_hasta = now()::timestamp - interval '1 minute' where codigo = $1", [codigo4]);
+  await vencerReservaReceta(codigo4);
   const tomada = await intentar(reservar(OTRA, codigo4));
   check("con la reserva vencida, otra tienda la toma", tomada.ok && (await estadoCentral(codigo4)).id_tienda_reserva === OTRA);
   const perdida = await validar(codigo4);

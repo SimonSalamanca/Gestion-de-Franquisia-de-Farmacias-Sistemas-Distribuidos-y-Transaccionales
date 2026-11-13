@@ -1,3 +1,4 @@
+import "./lib/owner.mjs";
 import crypto from "crypto";
 import { central, local } from "../apps/api/db.mjs";
 

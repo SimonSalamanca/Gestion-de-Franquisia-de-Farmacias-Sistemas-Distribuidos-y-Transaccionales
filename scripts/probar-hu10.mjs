@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { desactivarMedicamentos, publicarAltaMedicamento, registrarPrecioCentral } from "./lib/central.mjs";
 // Pruebas de HU-10 por las rutas reales de app.mjs: motivo obligatorio, reingreso al lote de origen, distinción entre
 // anulación total y devolución parcial, auditoría, y los límites (una sola anulación, nunca más de lo vendido), con
 // concurrencia, garantías de la base, operación sin conexión y consolidado en el central.
@@ -61,7 +63,8 @@ async function crearMedicamento(sufijo, { precio, tasa }) {
      select id_medicamento from m`,
     [`HU10-${S}-${sufijo}`, `Prueba Devoluciones ${S}-${sufijo}`, tasa],
   );
-  await central.query("insert into precio_medicamento (id_medicamento, precio, fecha_inicio_vigencia) values ($1, $2, now()::timestamp - interval '1 hour')", [r.rows[0].id_medicamento, precio]);
+  await publicarAltaMedicamento(r.rows[0].id_medicamento);
+  await registrarPrecioCentral({ idMedicamento: r.rows[0].id_medicamento, precio });
   return r.rows[0].id_medicamento;
 }
 const idB = await crearMedicamento("B", { precio: "2500.00", tasa: 19 });
@@ -281,7 +284,7 @@ try {
   }
 } finally {
   link.estado = "online";
-  await central.query("update medicamento set activo = false where codigo_interno like $1", [`HU10-${S}-%`]);
+  await desactivarMedicamentos("codigo_interno like $1", [`HU10-${S}-%`]);
   await local.query("update medicamento_ref set activo = false where codigo_interno like $1", [`HU10-${S}-%`]);
   server.close();
 }

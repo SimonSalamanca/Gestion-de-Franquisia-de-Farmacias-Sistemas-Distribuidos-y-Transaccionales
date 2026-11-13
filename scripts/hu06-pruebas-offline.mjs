@@ -1,3 +1,4 @@
+import "./lib/owner.mjs";
 import crypto from "crypto";
 import { login, abrirModulo } from "../apps/api/auth.mjs";
 import { link } from "../apps/api/sync.mjs";

@@ -1,3 +1,4 @@
+import "./lib/owner.mjs";
 // Pruebas de HU-02 (lotes, movimientos, recepción, ajustes). ESCRIBE en las bases del .env:
 // ejecutar contra un clon o una rama de Neon, nunca contra la base principal.
 import crypto from "crypto";
@@ -135,7 +136,7 @@ check("un AJUSTE da de baja el vencido", bajaVencido.cantidad_disponible === 0 &
 
 // --- Recepción de pedido (RF-23) ---
 const pendientes = await listarPedidosPendientes(local);
-let pedido = pendientes.find((p) => p.lineas.some((l) => l.cantidad_recibida < l.cantidad_solicitada));
+let pedido = null; // siempre un pedido nuevo: los pendientes de otras pruebas pueden tener líneas ya recibidas
 if (!pedido) {
   const nuevo = await local.query(
     `insert into pedido (id_proveedor, id_empleado_solicitante, origen_solicitud) values ($1, $2, 'MANUAL') returning id_pedido`,

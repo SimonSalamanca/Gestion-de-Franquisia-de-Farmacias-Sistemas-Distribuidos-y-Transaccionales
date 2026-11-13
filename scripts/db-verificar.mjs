@@ -1,3 +1,4 @@
+import "./lib/owner.mjs";
 // Compara el esquema que definen los scripts de db/<nodo>/ con el que tiene la base del .env.
 // Solo lectura: abre la sesión con default_transaction_read_only.
 // Uso: npm run db:verificar            (informa diferencias)
@@ -19,6 +20,8 @@ function esperado(nodo) {
   const funciones = new Set();
   for (const script of scriptsDe(nodo)) {
     const sql = fs.readFileSync(script.ruta, "utf8").replace(/\r/g, "").replace(/--.*$/gm, "");
+    // Lo que un script posterior elimina deja de esperarse (antes de leer lo que ese mismo script vuelva a crear).
+    for (const m of sql.matchAll(/DROP (?:CONSTRAINT|INDEX) (?:IF EXISTS )?(\w+)/gi)) nombres.delete(m[1]);
     for (const m of sql.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?(\w+)\s*\(([\s\S]*?)\n\);/gi)) {
       cols[m[1]] ??= new Set();
       for (const linea of m[2].split(/,\n/)) {

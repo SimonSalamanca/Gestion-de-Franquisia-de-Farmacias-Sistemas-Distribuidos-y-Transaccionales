@@ -30,8 +30,13 @@ function crearPool(nombre, url) {
   return pool;
 }
 
-export const central = crearPool("central", config.centralUrl);
-export const local = crearPool("local", config.localUrl);
+// La aplicación usa el rol de solo datos. FARMAHUB_ROL=owner (pruebas y mantenimiento) usa el dueño de la base.
+const comoDueño = process.env.FARMAHUB_ROL === "owner";
+export const central = crearPool("central", comoDueño ? config.centralUrl : config.centralAppUrl);
+export const local = crearPool("local", comoDueño ? config.localUrl : config.localAppUrl);
+// Las migraciones crean y cambian tablas: siempre con el dueño de la base.
+export const centralMigracion = crearPool("central-migracion", config.centralUrl);
+export const localMigracion = crearPool("local-migracion", config.localUrl);
 
 export async function withTx(pool, fn) {
   const client = await pool.connect();

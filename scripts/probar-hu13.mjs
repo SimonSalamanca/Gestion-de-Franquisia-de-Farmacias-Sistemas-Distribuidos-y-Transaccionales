@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { desactivarMedicamentos, desactivarProveedores, publicarAltaMedicamento } from "./lib/central.mjs";
 // Pruebas de HU-13 por las rutas reales de app.mjs: permisos, registro de proveedores (central + réplica), solicitudes
 // manuales y desde una alerta, proveedor obligatorio, estados (pendiente, enviada, recibida), concurrencia, idempotencia y
 // comportamiento sin conexión con el central.
@@ -56,6 +58,7 @@ const creado = await central.query(
    select id_medicamento from m`,
   [codigo, `Prueba Reabastecimiento ${S}`],
 );
+await publicarAltaMedicamento(creado.rows[0].id_medicamento);
 const idMed = creado.rows[0].id_medicamento;
 await migrate();
 await pullReplica();
@@ -294,12 +297,12 @@ try {
   check("la consola no tiene solicitudes (son de cada tienda) 404", (await pedir("/api/central/solicitudes", { token: general })).status === 404);
 } finally {
   link.estado = "online";
-  await central.query("update medicamento set activo = false where id_medicamento = $1", [idMed]);
+  await desactivarMedicamentos("id_medicamento = $1", [idMed]);
   await local.query("update medicamento_ref set activo = false where id_medicamento = $1", [idMed]);
   if (proveedoresCreados.length) {
     // Los proveedores de prueba se desactivan en las dos bases (sin eventos) y sus solicitudes abiertas se cancelan,
     // para que no queden como pendientes en la tienda.
-    await central.query("update proveedor set activo = false where id_proveedor = any($1::int[])", [proveedoresCreados]);
+    await desactivarProveedores("id_proveedor = any($1::int[])", [proveedoresCreados]);
     await local.query("update proveedor_ref set activo = false where id_proveedor = any($1::int[])", [proveedoresCreados]);
     await local.query(
       "update pedido set estado = 'CANCELADO', observaciones = 'limpieza de la prueba HU-13' where id_proveedor = any($1::int[]) and estado in ('SOLICITADO', 'ENVIADO')",

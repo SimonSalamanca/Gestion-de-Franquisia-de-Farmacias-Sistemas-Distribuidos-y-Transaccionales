@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { concederPermisoRol, desactivarMedicamentos, desactivarTiendaCentral, fijarConsolidadoTienda, limpiarConsolidadoTienda, publicarAltaMedicamento, quitarPermisoRol } from "./lib/central.mjs";
 import crypto from "crypto";
 import { central, local } from "../apps/api/db.mjs";
 import { migrate } from "../apps/api/migrate.mjs";
@@ -17,10 +19,9 @@ link.estado = "online";
 link.openedUntil = 0;
 const sobras = await central.query("select id_tienda from tienda where nombre like 'HU15 %' or nombre = 'No debe crearse' or nombre = 'No autorizada'");
 for (const row of sobras.rows) {
-  await central.query("delete from inventario_consolidado where id_tienda = $1", [row.id_tienda]);
-  await central.query("delete from umbral_stock where id_tienda = $1", [row.id_tienda]);
+  await limpiarConsolidadoTienda(row.id_tienda);
   await local.query("delete from tienda_ref where id_tienda = $1", [row.id_tienda]);
-  await central.query("delete from tienda where id_tienda = $1", [row.id_tienda]);
+  await desactivarTiendaCentral(row.id_tienda);
 }
 
 const antes = await central.query("select id_tienda, nombre, version_tienda, activa from tienda order by id_tienda");
@@ -82,6 +83,7 @@ if (med.rowCount === 0) {
           u as (insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
      select id_medicamento from m`,
   );
+  await publicarAltaMedicamento(med.rows[0].id_medicamento);
   medCreado = true;
 }
 const idMed = med.rows[0].id_medicamento;
@@ -113,7 +115,7 @@ link.estado = off;
 const permiso = await central.query(
   `select id_permiso from permiso where codigo = 'TIENDA_GESTIONAR'`,
 );
-await central.query("delete from rol_permiso where id_rol = 3 and id_permiso = $1", [permiso.rows[0].id_permiso]);
+await quitarPermisoRol(3, permiso.rows[0].id_permiso);
 try {
   const negado = await crearTienda(token, crypto.randomUUID(), {
     nombre: "No autorizada",
@@ -124,21 +126,13 @@ try {
   const noCreada = await central.query("select 1 from tienda where nombre = 'No autorizada'");
   check("403 no inserta", noCreada.rowCount === 0);
 } finally {
-  await central.query(
-    "insert into rol_permiso (id_rol, id_permiso) values (3, $1) on conflict do nothing",
-    [permiso.rows[0].id_permiso],
-  );
+  await concederPermisoRol(3, permiso.rows[0].id_permiso);
 }
 
 const baja = await desactivarTienda(token, crypto.randomUUID(), id, { version_tienda: editada.body.tienda.version_tienda });
 check("desactivar", baja.status === 200 && baja.body.tienda.activa === false, baja.body.mensaje || "");
 
-await central.query(
-  `insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible)
-   values ($1, $2, 4)
-   on conflict (id_tienda, id_medicamento) do update set cantidad_disponible = 4`,
-  [id, idMed],
-);
+await fijarConsolidadoTienda(id, idMed, 4);
 const cruce = await disponibilidad(token, new URLSearchParams());
 check(
   "desactivada fuera de cruce",
@@ -156,14 +150,15 @@ await pullReplica();
 const localRef = await local.query("select activa from tienda_ref where id_tienda = $1", [id]);
 check("replica local", localRef.rowCount === 1 && localRef.rows[0].activa === false);
 
-await central.query("delete from inventario_consolidado where id_tienda = $1", [id]);
-await central.query("delete from umbral_stock where id_tienda = $1", [id]);
+await limpiarConsolidadoTienda(id);
 await local.query("delete from tienda_ref where id_tienda = $1", [id]);
-await central.query("delete from tienda where id_tienda = $1 and nombre like 'HU15 %'", [id]);
-if (medCreado) await central.query("delete from medicamento where id_medicamento = $1", [idMed]);
+await desactivarTiendaCentral(id);
+if (medCreado) await desactivarMedicamentos("id_medicamento = $1", [idMed]);
 
 const final = await central.query("select id_tienda, nombre, version_tienda, activa from tienda order by id_tienda");
-check("estado original restaurado", JSON.stringify(final.rows) === JSON.stringify(antes.rows));
+// Las tiendas HU15 no se borran (la baja es lógica y queda en el log de réplica): se comparan solo las demás.
+const sinHu15 = (rows) => JSON.stringify(rows.filter((t) => !t.nombre.startsWith("HU15 ")));
+check("estado original restaurado", sinHu15(final.rows) === sinHu15(antes.rows));
 
 console.log(fallos.length ? `FALLOS ${fallos.length}` : "TODO OK");
 await central.end();

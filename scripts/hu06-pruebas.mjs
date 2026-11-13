@@ -1,5 +1,7 @@
+import "./lib/owner.mjs";
 import crypto from "crypto";
 import { central, local } from "../apps/api/db.mjs";
+import { fijarEstadoAcceso } from "./lib/central.mjs";
 
 const BASE = "http://localhost:4000";
 const PASSWORD = "Farma123";
@@ -83,12 +85,9 @@ await paso("preparación (1 round-trip por nodo)", async () => {
         ` bloqueado_hasta = null, provisional = false, provisional_hasta = null, id_snapshot = 0;`,
     )
     .join("\n");
-  await central.query(
-    `begin;
-${resetControl}
-delete from bloqueo_canonico where id_empleado in (${lista});
-commit;`,
-  );
+  for (const id of ids.map(Number)) {
+    await fijarEstadoAcceso(id, { bloqueos: true, control: { epoch: 1, intentos: 0, estado: "ACTIVO" } });
+  }
   await local.query(
     `begin;
 ${resetControl}

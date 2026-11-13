@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { desactivarMedicamentos, desactivarProveedores, publicarAltaMedicamento } from "./lib/central.mjs";
 // Pruebas de HU-14 por las rutas reales de app.mjs: la recepción pide lote y caducidad, actualiza el inventario con lote y
 // proveedor, queda ligada a la solicitud original, deja constancia de las diferencias (faltante y sobrante) y se audita con
 // responsable, fecha y hora. También idempotencia, concurrencia, inmutabilidad y funcionamiento sin conexión.
@@ -55,6 +57,7 @@ async function crearMedicamento(sufijo) {
      select id_medicamento from m`,
     [`HU14${sufijo}-${S}`.toUpperCase(), `Prueba Recepción ${sufijo} ${S}`],
   );
+  await publicarAltaMedicamento(r.rows[0].id_medicamento);
   return r.rows[0].id_medicamento;
 }
 const idA = await crearMedicamento("A");
@@ -243,10 +246,10 @@ try {
   link.estado = "online";
 } finally {
   link.estado = "online";
-  await central.query("update medicamento set activo = false where id_medicamento = any($1::int[])", [[idA, idB]]);
+  await desactivarMedicamentos("id_medicamento = any($1::int[])", [[idA, idB]]);
   await local.query("update medicamento_ref set activo = false where id_medicamento = any($1::int[])", [[idA, idB]]);
   if (proveedoresCreados.length) {
-    await central.query("update proveedor set activo = false where id_proveedor = any($1::int[])", [proveedoresCreados]);
+    await desactivarProveedores("id_proveedor = any($1::int[])", [proveedoresCreados]);
     await local.query("update proveedor_ref set activo = false where id_proveedor = any($1::int[])", [proveedoresCreados]);
     await local.query(
       "update pedido set estado = 'CANCELADO', observaciones = 'limpieza de la prueba HU-14' where id_proveedor = any($1::int[]) and estado in ('SOLICITADO', 'ENVIADO')",

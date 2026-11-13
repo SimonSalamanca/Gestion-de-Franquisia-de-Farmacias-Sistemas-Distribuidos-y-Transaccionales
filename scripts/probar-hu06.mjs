@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { ajustarControlAcceso, crearEmpleadoPrueba, desactivarEmpleado, fijarEstadoAcceso, fijarPoliticaAcceso, fijarVersionCredencial } from "./lib/central.mjs";
 import crypto from "crypto";
 import { central, local } from "../apps/api/db.mjs";
 import { migrate } from "../apps/api/migrate.mjs";
@@ -13,7 +15,7 @@ function check(nombre, ok, detalle = "") {
 }
 
 await migrate();
-await central.query("update politica_acceso set intentos_maximos = 5, minutos_bloqueo = 15 where id = 1");
+await fijarPoliticaAcceso(5, 15);
 await local.query("update politica_acceso set intentos_maximos = 5, minutos_bloqueo = 15 where id = 1");
 
 const nullable = await local.query(
@@ -118,13 +120,7 @@ link.estado = "online";
 const hash = hashPassword("Farma123");
 // Usuario único por corrida: la cuenta de prueba se desactiva al final, no se borra (HU-07: su auditoría es permanente).
 const USUARIO_LOCK = `hu06.lock.${Date.now().toString(36)}`;
-const creado = await central.query(
-  `insert into empleado (id_tienda, id_rol, nombre_completo, usuario, contrasena_hash, correo, activo, version_credencial)
-   values (1, 1, 'Lock Test', $2, $1, null, true, 1)
-   returning id_empleado`,
-  [hash, USUARIO_LOCK],
-);
-const id = creado.rows[0].id_empleado;
+const id = await crearEmpleadoPrueba({ usuario: USUARIO_LOCK, nombre: "Lock Test", idRol: 1, hash });
 await local.query(
   `insert into empleado_ref (id_empleado, id_rol, id_tienda, nombre_completo, usuario, activo, contrasena_hash, version_credencial)
    values ($1, 1, 1, 'Lock Test', $3, true, $2, 1)`,
@@ -153,9 +149,7 @@ check(
   JSON.stringify({ antes: antes.rows[0], despues: lock }),
 );
 
-await central.query("delete from bloqueo_canonico where id_empleado = $1", [id]);
-await central.query("delete from control_acceso where id_empleado = $1", [id]);
-await central.query("insert into control_acceso (id_empleado, epoch, intentos_en_epoch, estado) values ($1, 3, 0, 'ACTIVO')", [id]);
+await fijarEstadoAcceso(id, { bloqueos: true, control: { epoch: 3, intentos: 0, estado: "ACTIVO" } });
 for (let i = 0; i < 3; i += 1) {
   await central.query("select fold_evento(1, $1, 'FAIL', $2::jsonb)", [
     crypto.randomUUID(),
@@ -175,10 +169,7 @@ const canon = await central.query(
 const estadoCanon = await central.query("select estado, intentos_en_epoch from control_acceso where id_empleado = $1", [id]);
 check("3+2 un solo bloqueo", canon.rows[0].n === 1 && estadoCanon.rows[0].estado === "BLOQUEADO", JSON.stringify(estadoCanon.rows[0]));
 
-await central.query(
-  "update control_acceso set bloqueado_hasta = now() - interval '1 minute' where id_empleado = $1",
-  [id],
-);
+await ajustarControlAcceso(id, { bloqueadoHastaSql: "now() - interval '1 minute'" });
 await central.query("select fold_evento(1, $1, 'EXPIRADO', $2::jsonb)", [
   crypto.randomUUID(),
   JSON.stringify({ id_empleado: id, version_credencial_observada: 1, epoch_observado: 3 }),
@@ -226,7 +217,7 @@ check(
   JSON.stringify(snapTras.rows[0]),
 );
 
-await central.query("update empleado set version_credencial = 2 where id_empleado = $1", [id]);
+await fijarVersionCredencial(id, 2);
 const epochAntesObs = await central.query("select epoch, intentos_en_epoch from control_acceso where id_empleado = $1", [id]);
 await central.query("select fold_evento(1, $1, 'SUCCESS', $2::jsonb)", [
   crypto.randomUUID(),
@@ -264,13 +255,10 @@ link.estado = "online";
 link.openedUntil = 0;
 
 try {
-  await central.query("update politica_acceso set intentos_maximos = 2, minutos_bloqueo = 9 where id = 1");
+  await fijarPoliticaAcceso(2, 9);
   await local.query("update politica_acceso set intentos_maximos = 2, minutos_bloqueo = 9 where id = 1");
-  await central.query("delete from bloqueo_canonico where id_empleado = $1", [id]);
-  await central.query(
-    "update control_acceso set epoch = 9, intentos_en_epoch = 0, estado = 'ACTIVO', bloqueado_hasta = null where id_empleado = $1",
-    [id],
-  );
+  await fijarEstadoAcceso(id, { bloqueos: true });
+  await ajustarControlAcceso(id, { epoch: 9, intentos: 0, estado: "ACTIVO", bloqueadoHastaSql: "null" });
   await central.query("select fold_evento(1, $1, 'FAIL', $2::jsonb)", [
     crypto.randomUUID(),
     JSON.stringify({ id_empleado: id, version_credencial_observada: 2, epoch_observado: 9 }),
@@ -313,7 +301,7 @@ try {
     JSON.stringify(localDos.rows[0]),
   );
 } finally {
-  await central.query("update politica_acceso set intentos_maximos = 5, minutos_bloqueo = 15 where id = 1");
+  await fijarPoliticaAcceso(5, 15);
   await local.query("update politica_acceso set intentos_maximos = 5, minutos_bloqueo = 15 where id = 1");
 }
 
@@ -324,10 +312,8 @@ await local.query("delete from sesion_activa where id_empleado = $1", [id]);
 await local.query("delete from control_acceso where id_empleado = $1", [id]);
 await local.query("delete from outbox_sync where id_empleado = $1", [id]);
 await local.query("update empleado_ref set activo = false, fecha_baja = now(), contrasena_hash = null where id_empleado = $1", [id]);
-await central.query("delete from sesion_activa where id_empleado = $1", [id]);
-await central.query("delete from bloqueo_canonico where id_empleado = $1", [id]);
-await central.query("delete from control_acceso where id_empleado = $1", [id]);
-await central.query("update empleado set activo = false, fecha_baja = now() where id_empleado = $1", [id]);
+await fijarEstadoAcceso(id, { bloqueos: true, revocar: true });
+await desactivarEmpleado(id);
 
 console.log(fallos.length ? `FALLOS ${fallos.length}` : "TODO OK");
 await central.end();

@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { desactivarMedicamentos, publicarAltaMedicamento, registrarPrecioCentral } from "./lib/central.mjs";
 // Pruebas de HU-05 por las rutas reales de app.mjs: reporte de la tienda (unidades e ingresos por método de pago, con
 // devoluciones y anulaciones), inventario crítico y caducidad por tramos, comparativo de red (cuadre con la tienda,
 // indicadores de stock, solo tiendas activas), permisos y auditoría, periodo inválido, sin conexión y rendimiento con
@@ -68,10 +70,8 @@ async function crearMedicamento(sufijo, { precio, minimo = 0 }) {
      select id_medicamento from m`,
     [`HU05-${S}-${sufijo}`, `Prueba Reportes ${S}-${sufijo}`, minimo],
   );
-  await central.query(
-    "insert into precio_medicamento (id_medicamento, precio, fecha_inicio_vigencia) values ($1, $2, now()::timestamp - interval '1 hour')",
-    [r.rows[0].id_medicamento, precio],
-  );
+  await publicarAltaMedicamento(r.rows[0].id_medicamento);
+  await registrarPrecioCentral({ idMedicamento: r.rows[0].id_medicamento, precio: precio });
   return r.rows[0].id_medicamento;
 }
 async function crearLote(idMed, sufijo, cantidad, diasParaCaducar) {
@@ -239,6 +239,7 @@ try {
   const c = await central.connect();
   try {
     await c.query("begin");
+    // guardia-permitido: transacción que se revierte (no deja cambios)
     await c.query("update tienda set activa = false where id_tienda = $1", [TIENDA]);
     const sinTienda = await comparativoRed({ desde: HOY_CENTRAL, hasta: HOY_CENTRAL }, c);
     check("una tienda desactivada no aparece", !sinTienda.tiendas.some((t) => t.id_tienda === TIENDA));
@@ -325,7 +326,7 @@ try {
   }
 } finally {
   link.estado = "online";
-  await central.query("update medicamento set activo = false where codigo_interno like $1", [`HU05-${S}-%`]);
+  await desactivarMedicamentos("codigo_interno like $1", [`HU05-${S}-%`]);
   await local.query("update medicamento_ref set activo = false where codigo_interno like $1", [`HU05-${S}-%`]);
   server.close();
 }

@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { desactivarEmpleado } from "./lib/central.mjs";
 // Pruebas de HU-07 por las rutas reales de app.mjs: cuentas, jerarquía, restablecimiento, réplica a la tienda,
 // sin conexión, auditoría no editable, filtros y subida de la auditoría de la tienda al central.
 // ESCRIBE en las bases del .env: con URLs de Neon se niega a correr salvo PERMITIR_NEON=1 (rama de prueba).
@@ -224,7 +226,7 @@ try {
   link.estado = "online";
   // Las cuentas de prueba quedan desactivadas (no se borran: su auditoría las referencia).
   for (const idCreado of creados) {
-    await central.query("update empleado set activo = false, fecha_baja = coalesce(fecha_baja, now()) where id_empleado = $1", [idCreado]);
+    await desactivarEmpleado(idCreado);
     await local.query("update empleado_ref set activo = false, fecha_baja = coalesce(fecha_baja, now()) where id_empleado = $1", [idCreado]);
   }
   server.close();

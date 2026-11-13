@@ -1,3 +1,5 @@
+import "./lib/owner.mjs";
+import { aplicarRespuestaCentral, desactivarMedicamentos, publicarAltaMedicamento } from "./lib/central.mjs";
 // Pruebas de HU-17 con DOS tiendas reales: esta (la del .env, destino) y una segunda tienda creada para la corrida (origen),
 // que corre el mismo código del API en otro proceso con su base en un esquema propio (scripts/hu17-nodo.mjs). Se prueba la
 // saga completa por los mismos canales que en producción (eventos dirigidos del central, outbox de cada tienda):
@@ -80,6 +82,7 @@ const idMed = (await uno(
    select id_medicamento from m`,
   [`HU17-${S}`.toUpperCase(), `Prueba Traslado ${S}`],
 )).id_medicamento;
+await publicarAltaMedicamento(idMed);
 await migrate();
 await pullReplica();
 
@@ -195,14 +198,7 @@ try {
   check("el central lo completa (COMPLETADO)", (await estadoCentral(id1)).estado === "COMPLETADO");
   // Entrega duplicada de la respuesta del destino al central: no cambia nada.
   const respuesta = (await local.query("select idempotency_key, tipo_evento, payload from outbox_sync where tipo_evento = 'TRASLADO_RECIBIDO' and (payload ->> 'id_traslado')::int = $1", [id1])).rows[0];
-  const cc = await central.connect();
-  try {
-    await cc.query("begin");
-    await aplicarEnCentral(cc, TIENDA, respuesta);
-    await cc.query("commit");
-  } finally {
-    cc.release();
-  }
+  await aplicarRespuestaCentral(TIENDA, respuesta);
   check("la respuesta repetida no altera el traslado", (await estadoCentral(id1)).estado === "COMPLETADO");
   await avanzar(1);
   check("las dos tiendas explican lo mismo (estado de red COMPLETADO)", (await enOrigen(id1))?.estado_red === "COMPLETADO" && (await enDestino(id1))?.estado_red === "COMPLETADO");
@@ -320,7 +316,7 @@ try {
   const t = await uno(central, "select version_tienda from tienda where id_tienda = $1", [ORIGEN]).catch(() => null);
   if (t) await pedir(`/api/central/tiendas/${ORIGEN}/desactivar`, { method: "POST", token: general, key: nuevaKey(), body: { version_tienda: Number(t.version_tienda) } });
   await local.query(`drop schema if exists ${ESQUEMA} cascade`).catch((error) => console.error("esquema", error.message));
-  await central.query("update medicamento set activo = false where id_medicamento = $1", [idMed]);
+  await desactivarMedicamentos("id_medicamento = $1", [idMed]);
   await local.query("update medicamento_ref set activo = false where id_medicamento = $1", [idMed]);
   await flushOutbox().catch(() => {});
   server.close();
