@@ -2,7 +2,8 @@ import "./lib/owner.mjs";
 // Prueba de punta a punta del flujo de stock entre el nodo local de la tienda y el nodo central
 // (HU-01 criterio 4, HU-02 y RNF-04): un movimiento en la tienda llega a inventario_consolidado por el
 // ciclo real de sincronización del API, y lo hecho sin conexión llega al reconectar.
-// Requiere el API del nodo local corriendo (npm run api) con FARMAHUB_SIMULACION activo.
+// Requiere el API del nodo local corriendo (npm run api) con FARMAHUB_SIMULACION activo, apuntado a las MISMAS bases que
+// este script: antes de escribir se comprueba que la sesión abierta por el API exista en la base local de esta configuración.
 // ESCRIBE lotes y ajustes: ejecutar contra bases de prueba, nunca contra la base principal.
 //   API_URL=http://127.0.0.1:4000  USUARIO=admin.tienda  PASSWORD=Farma123  MEDICAMENTO=MED-002
 import { config } from "../apps/api/config.mjs";
@@ -12,7 +13,8 @@ if ([config.centralUrl, config.localUrl].some((url) => url.includes("neon.tech")
   process.exit(2);
 }
 
-const { central } = await import("../apps/api/db.mjs");
+const { central, local } = await import("../apps/api/db.mjs");
+const { createHash } = await import("crypto");
 const API = process.env.API_URL || "http://127.0.0.1:4000";
 const CODIGO = process.env.MEDICAMENTO || "MED-002";
 // HU-01 "Actualización continua": ciclo de outbox (10 s) + refresco del POS (5 s).
@@ -43,6 +45,15 @@ if (sesion.status !== 200) {
   process.exit(2);
 }
 const token = sesion.data.token;
+// Candado: el API de API_URL puede estar conectado a otra base (p. ej. un "npm run dev" contra Neon en el puerto 4000)
+// aunque este script apunte a bases de prueba. Su login crea la sesión en SU base local: si no está en la nuestra, se
+// aborta antes de escribir lotes o ajustes.
+const hashSesion = createHash("sha256").update(token).digest("hex");
+if ((await local.query("select 1 from sesion_activa where token_hash = $1", [hashSesion])).rowCount !== 1) {
+  console.error(`El API de ${API} no usa la base local de esta configuración: se aborta sin escribir. Indique API_URL del API de prueba.`);
+  await Promise.allSettled([central.end(), local.end()]);
+  process.exit(2);
+}
 const idTienda = (await api("/api/local/inventario/tiendas", { token })).data.find((t) => t.propia).id_tienda;
 const med = (await api(`/api/local/inventario/buscar?q=${CODIGO}`, { token })).data.resultados.find((m) => m.codigo_interno === CODIGO);
 check(`medicamento ${CODIGO} en el catálogo local`, med != null);
@@ -100,8 +111,9 @@ try {
   check("el ajuste llega al central", ms != null, duracion(ms, stock));
 
   // 3. Sin conexión: la tienda sigue operando, el central no cambia y recibe todo al reconectar (RNF-04).
-  const caida = await api("/api/conectividad/simular", { method: "POST", body: { probe: "timeout", veces: 5 } });
-  check("el nodo local queda offline", caida.data.estado_real === "offline", caida.status === 404 ? "FARMAHUB_SIMULACION desactivado" : "");
+  // Demostración de conectividad (docs/operacion/demostracion-conectividad.md): «Central caído» con sesión de administrador.
+  const caida = await api("/api/local/simulacion", { method: "POST", token, body: { escenario: "caido" } });
+  check("el nodo local queda offline", caida.data.conectividad?.estado_real === "offline", caida.status === 404 ? "FARMAHUB_SIMULACION desactivado" : String(caida.status));
   const offline = await registrarLote(4);
   check("la tienda registra un lote sin conexión", offline.status === 201);
   const stockOffline = await stockLocal();
@@ -110,12 +122,12 @@ try {
   check("offline: la búsqueda local sigue", (await api(`/api/local/inventario/buscar?q=${CODIGO}`, { token })).status === 200);
   check("offline: la consulta de la red responde 503", (await api(`/api/local/inventario/red/${med.id_medicamento}`, { token })).status === 503);
 } finally {
-  await api("/api/conectividad/simular", { method: "POST", body: { probe: "ok" } });
+  await api("/api/local/simulacion", { method: "POST", token, body: { restablecer: true } });
 }
 const stockFinal = await stockLocal();
 const ms = await esperarCentral(stockFinal);
 check("al reconectar, el central recibe lo hecho offline", ms != null, duracion(ms, stockFinal));
 
 console.log(fallos.length ? `\n${fallos.length} FALLO(S)\n- ${fallos.join("\n- ")}` : "\nTODO OK");
-await central.end();
+await Promise.allSettled([central.end(), local.end()]);
 process.exit(fallos.length ? 1 : 0);
