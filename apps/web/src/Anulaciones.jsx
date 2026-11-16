@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
 import { fechaHora, pesos } from "./inventarioUi.jsx";
 
@@ -8,7 +8,8 @@ import { fechaHora, pesos } from "./inventarioUi.jsx";
 
 const ETIQUETA = { ANULACION_TOTAL: "Anulación total", DEVOLUCION_PARCIAL: "Devolución parcial" };
 
-export default function Anulaciones({ session }) {
+// pedido.id_factura: llega desde el historial (Ventas y recetas → Historial → «Anular o devolver»).
+export default function Anulaciones({ session, pedido }) {
   const token = session.token;
   const [numero, setNumero] = useState("");
   const [lista, setLista] = useState(null);
@@ -18,6 +19,8 @@ export default function Anulaciones({ session }) {
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  // Confirmación propia (antes window.confirm): dice exactamente qué va a pasar antes de registrar.
+  const [porConfirmar, setPorConfirmar] = useState(null);
   // La clave se mantiene mientras el cajero reintenta la misma operación (red caída, doble clic): no se duplica.
   const clave = useRef(crypto.randomUUID());
 
@@ -40,7 +43,15 @@ export default function Anulaciones({ session }) {
     elegir(r.data);
   }
 
+  // Con una factura pedida se abre de una vez; si no, se listan las más recientes sin pulsar Buscar.
+  useEffect(() => {
+    if (pedido?.id_factura) abrir(pedido.id_factura);
+    else buscar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedido?.n]);
+
   function elegir(datos) {
+    setPorConfirmar(null);
     setEstado(datos);
     setCantidades({});
     setMotivo("");
@@ -50,7 +61,6 @@ export default function Anulaciones({ session }) {
   async function enviar(tipo) {
     setError("");
     setAviso("");
-    const id = estado.factura.id_factura;
     let body = { motivo };
     if (tipo === "devolver") {
       const lineas = Object.entries(cantidades)
@@ -60,8 +70,14 @@ export default function Anulaciones({ session }) {
       body = { motivo, lineas };
     }
     if (motivo.trim().length < 5) return setError("El motivo es obligatorio (mínimo 5 caracteres)");
-    const que = tipo === "anular" ? `ANULAR por completo la factura ${estado.factura.numero_factura}` : "registrar esta devolución parcial";
-    if (!window.confirm(`¿Confirma ${que}? Esta operación no se puede deshacer.`)) return;
+    const unidades = tipo === "devolver" ? body.lineas.reduce((t, l) => t + l.cantidad, 0) : null;
+    setPorConfirmar({ tipo, body, unidades });
+  }
+
+  async function confirmar() {
+    const { tipo, body } = porConfirmar;
+    const id = estado.factura.id_factura;
+    setPorConfirmar(null);
     setOcupado(true);
     let r;
     try {
@@ -139,6 +155,22 @@ export default function Anulaciones({ session }) {
                 <button className="danger" disabled={ocupado || !estado.anulable} onClick={() => enviar("anular")}
                   title={estado.anulable ? "" : "La factura ya tiene devoluciones: no se puede anular completa"}>Anular factura completa</button>
               </div>
+              {porConfirmar && (
+                <div role="group" aria-label="Confirmar operación" className="mt-3 rounded-xl border border-error-borde border-l-[3px] border-l-error bg-error-fondo p-4">
+                  <p className="m-0 text-[14px] text-tinta">
+                    {porConfirmar.tipo === "anular"
+                      ? <>Va a <strong>anular por completo</strong> la factura {estado.factura.numero_factura} ({pesos(estado.factura.total)}). Todas sus unidades vuelven a sus lotes de origen.</>
+                      : <>Va a <strong>devolver {porConfirmar.unidades} unidad{porConfirmar.unidades === 1 ? "" : "es"}</strong> de la factura {estado.factura.numero_factura}. Vuelven a sus lotes de origen.</>}
+                    {" "}Motivo: «{porConfirmar.body.motivo.trim()}». <strong>No se puede deshacer.</strong>
+                  </p>
+                  <div className="row mt-3">
+                    <button className={porConfirmar.tipo === "anular" ? "danger" : "primary"} autoFocus onClick={confirmar}>
+                      {porConfirmar.tipo === "anular" ? "Sí, anular la factura" : "Sí, registrar la devolución"}
+                    </button>
+                    <button className="ghost" onClick={() => setPorConfirmar(null)}>Cancelar</button>
+                  </div>
+                </div>
+              )}
               {!estado.anulable && <p className="muted">Esta factura ya tiene devoluciones, así que no se puede anular completa.</p>}
             </>
           ) : (

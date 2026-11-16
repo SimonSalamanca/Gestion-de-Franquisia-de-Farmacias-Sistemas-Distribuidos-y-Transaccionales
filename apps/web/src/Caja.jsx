@@ -6,7 +6,8 @@ import Historial from "./Historial.jsx";
 
 // Módulo "Ventas y recetas" del POS: HU-08 (venta y factura), HU-09 (historial y reimpresión) y HU-12 (recetas). Las dos pestañas
 // quedan montadas para no perder el carrito al validar una receta.
-export default function Caja({ session }) {
+// irA: abre otro módulo con datos (el historial manda la factura a Anulaciones).
+export default function Caja({ session, irA }) {
   const [pestana, setPestana] = useState("venta");
   // HU-11: con la caja cerrada (cierre del periodo) no se vende; se avisa antes de armar la venta.
   const [caja, setCaja] = useState(null);
@@ -23,7 +24,15 @@ export default function Caja({ session }) {
   return (
     <article className="inventario">
       <header className="inv-cabecera">
-        <h2>Ventas y recetas</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2>Ventas y recetas</h2>
+          {caja?.abierta && (
+            <span className="pill online" title={caja.abierta_en ? `Periodo ${caja.periodo}` : undefined}>
+              Caja abierta{caja.abierta_en ? ` desde las ${new Date(caja.abierta_en).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+            </span>
+          )}
+          {caja && !caja.abierta && <span className="pill offline">Caja cerrada</span>}
+        </div>
         <div className="pestanas" role="tablist">
           <button role="tab" aria-selected={pestana === "venta"} className={pestana === "venta" ? "active" : ""} onClick={() => setPestana("venta")}>Venta</button>
           <button role="tab" aria-selected={pestana === "recetas"} className={pestana === "recetas" ? "active" : ""} onClick={() => setPestana("recetas")}>Recetas</button>
@@ -32,12 +41,20 @@ export default function Caja({ session }) {
       </header>
       {caja && !caja.abierta && (
         <div className="error" role="alert">
-          La caja está cerrada: no se pueden registrar ventas hasta que un administrador abra un nuevo periodo (módulo Cierre de caja).
+          La caja está cerrada: no se pueden registrar ventas hasta que un administrador abra un nuevo periodo
+          {session.permisos.includes("CAJA_CERRAR") && irA ? (
+            <>
+              {" "}
+              <button type="button" className="enlace" onClick={() => irA("CAJA_CERRAR")}>Abrir caja ahora</button>
+            </>
+          ) : (
+            " (módulo Cierre de caja)."
+          )}
         </div>
       )}
-      <div hidden={pestana !== "venta"}><Ventas session={session} /></div>
+      <div hidden={pestana !== "venta"}><Ventas session={session} caja={caja} /></div>
       <div hidden={pestana !== "recetas"}><Recetas session={session} incrustada /></div>
-      {pestana === "historial" && <Historial session={session} />}
+      {pestana === "historial" && <Historial session={session} irA={irA} />}
     </article>
   );
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
 import { fechaHora, pesos } from "./inventarioUi.jsx";
+import { ValidarCodigo } from "./Recetas.jsx";
 
 // HU-08: caja. Se arma el carrito, el servidor calcula el subtotal con el precio vigente y el impuesto de cada
 // medicamento, el cajero reparte el pago entre uno o varios métodos y se emite la factura en una sola transacción.
@@ -17,8 +18,12 @@ function mensajeError(r) {
   return mensaje || "No se pudo registrar la venta";
 }
 
-export default function Ventas({ session }) {
+// caja: estado de la caja (Caja.jsx). Con la caja cerrada no se arma la venta: el servidor la rechazaría al cobrar.
+export default function Ventas({ session, caja }) {
   const token = session.token;
+  const cerrada = Boolean(caja && !caja.abierta);
+  const buscador = useRef(null);
+  const [validando, setValidando] = useState(null); // id_medicamento de la línea que valida una receta nueva
   const [busqueda, setBusqueda] = useState("");
   const [resultados, setResultados] = useState([]);
   const [carrito, setCarrito] = useState([]); // { med, cantidad, id_receta, recetas }
@@ -65,24 +70,55 @@ export default function Ventas({ session }) {
         if (r.ok) recetas = r.data.recetas;
       }
       setCarrito((c) => [...c, { med, cantidad: "1", id_receta: recetas[0]?.id_receta ?? "", recetas }]);
+      // Controlado sin receta utilizable: se abre de una vez la validación en su línea.
+      if (med.requiere_receta && recetas.length === 0) setValidando(med.id_medicamento);
       setBusqueda("");
+      buscador.current?.focus();
     },
     [carrito, token],
   );
 
+  // Enter agrega el primer resultado que se puede vender; Esc limpia la búsqueda.
+  function teclaBusqueda(event) {
+    if (event.key === "Escape") return setBusqueda("");
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const primero = resultados.find((m) => m.stock_tienda > 0 && m.precio != null);
+    if (primero) agregar(primero);
+  }
+
   const cambiar = (id, campos) => setCarrito((c) => c.map((l) => (l.med.id_medicamento === id ? { ...l, ...campos } : l)));
   const quitar = (id) => setCarrito((c) => c.filter((l) => l.med.id_medicamento !== id));
 
-  async function refrescarRecetas(linea) {
+  // preferida: la receta recién validada en la línea queda elegida.
+  async function refrescarRecetas(linea, preferida) {
     const r = await api(`/api/local/recetas?id_medicamento=${linea.med.id_medicamento}&solo_utilizables=1`, { token });
-    if (r.ok) cambiar(linea.med.id_medicamento, { recetas: r.data.recetas, id_receta: linea.id_receta || r.data.recetas[0]?.id_receta || "" });
+    if (r.ok) {
+      const existe = (id) => id && r.data.recetas.some((x) => String(x.id_receta) === String(id));
+      const id = existe(preferida) ? preferida : linea.id_receta || r.data.recetas[0]?.id_receta || "";
+      cambiar(linea.med.id_medicamento, { recetas: r.data.recetas, id_receta: id });
+    }
   }
 
   const total = calculo ? centavos(calculo.total) : 0;
   const pagado = Object.values(pagos).reduce((s, v) => s + centavos(v), 0);
   const restante = total - pagado;
   const faltaReceta = carrito.some((l) => l.med.requiere_receta && !l.id_receta);
-  const puede = calculo?.puede_vender && restante === 0 && total > 0 && !faltaReceta && !ocupado;
+  const puede = calculo?.puede_vender && restante === 0 && total > 0 && !faltaReceta && !ocupado && !cerrada;
+
+  // Ctrl+Enter confirma la venta cuando todo está listo (mismas condiciones que el botón).
+  const venderRef = useRef(null);
+  venderRef.current = puede ? vender : null;
+  useEffect(() => {
+    const alTeclear = (event) => {
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && venderRef.current) {
+        event.preventDefault();
+        venderRef.current();
+      }
+    };
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, []);
 
   async function vender() {
     setError("");
@@ -113,7 +149,20 @@ export default function Ventas({ session }) {
   return (
     <div>
       <h3>Nueva venta</h3>
-      <input placeholder="Buscar medicamento por nombre, principio activo o código" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} aria-label="Buscar medicamento" />
+      <input
+        ref={buscador}
+        autoFocus
+        disabled={cerrada}
+        placeholder={cerrada ? "La caja está cerrada: no se pueden registrar ventas" : "Buscar medicamento por nombre, principio activo o código"}
+        value={busqueda}
+        onChange={(e) => setBusqueda(e.target.value)}
+        onKeyDown={teclaBusqueda}
+        aria-label="Buscar medicamento"
+        aria-describedby="ayuda-busqueda"
+      />
+      <p id="ayuda-busqueda" className="m-0 mt-1.5 text-[12.5px] text-tenue">
+        Enter agrega el primer resultado · Esc limpia la búsqueda · Ctrl + Enter confirma la venta cuando el pago está completo.
+      </p>
       {resultados.length > 0 && (
         <ul className="inv-lista">
           {resultados.slice(0, 8).map((m) => (
@@ -148,15 +197,32 @@ export default function Ventas({ session }) {
                       {l.med.nombre_comercial}
                       {fila && !fila.stock_suficiente && <div className="error">Stock insuficiente</div>}
                       {l.med.requiere_receta && (
-                        <div>
-                          <select value={l.id_receta} onChange={(e) => cambiar(l.med.id_medicamento, { id_receta: e.target.value })} aria-label={`Receta de ${l.med.nombre_comercial}`}>
-                            <option value="">Receta del paciente…</option>
-                            {l.recetas.map((r) => (
-                              <option key={r.id_receta} value={r.id_receta}>{r.codigo_receta || `Receta ${r.id_receta}`} · {r.paciente}</option>
-                            ))}
-                          </select>
-                          <button type="button" className="enlace" onClick={() => refrescarRecetas(l)}>Actualizar</button>
-                          {l.recetas.length === 0 && <div className="muted">Valide la receta con su código en la pestaña Recetas.</div>}
+                        <div className="mt-2">
+                          {l.recetas.length > 0 && (
+                            <select value={l.id_receta} onChange={(e) => cambiar(l.med.id_medicamento, { id_receta: e.target.value })} aria-label={`Receta de ${l.med.nombre_comercial}`}>
+                              <option value="">Receta del paciente…</option>
+                              {l.recetas.map((r) => (
+                                <option key={r.id_receta} value={r.id_receta}>{r.codigo_receta || `Receta ${r.id_receta}`} · {r.paciente}</option>
+                              ))}
+                            </select>
+                          )}
+                          {validando === l.med.id_medicamento ? (
+                            // Validación en la misma venta (antes había que ir a la pestaña Recetas y volver).
+                            <div className="mt-2 rounded-lg border border-linea bg-suave px-3 pb-3">
+                              <ValidarCodigo
+                                token={token}
+                                onListo={(receta) => {
+                                  setValidando(null);
+                                  refrescarRecetas(l, receta.id_receta);
+                                }}
+                              />
+                              <button type="button" className="enlace mt-2 text-[13px]" onClick={() => setValidando(null)}>Cancelar</button>
+                            </div>
+                          ) : (
+                            <button type="button" className="enlace mt-1 text-[13px]" onClick={() => setValidando(l.med.id_medicamento)}>
+                              {l.recetas.length === 0 ? "Validar la receta del paciente" : "Validar otra receta"}
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>
@@ -241,7 +307,7 @@ function FacturaEmitida({ factura, onNueva }) {
       <p><strong>Total {pesos(factura.total)}</strong></p>
       <p className="muted">Pagos: {factura.pagos.map((p) => `${p.metodo} ${pesos(p.monto)}`).join(" · ")}</p>
       <div className="ok">Venta registrada. El stock y la factura quedaron guardados en esta tienda.</div>
-      <button className="primary" onClick={onNueva}>Nueva venta</button>
+      <button className="primary" autoFocus onClick={onNueva}>Nueva venta</button>
     </div>
   );
 }

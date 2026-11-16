@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "./api.js";
 import { fechaHora, pesos } from "./inventarioUi.jsx";
 
@@ -8,8 +8,11 @@ import { fechaHora, pesos } from "./inventarioUi.jsx";
 
 const VACIO = { cliente: "", numero: "", desde: "", hasta: "" };
 
-export default function Historial({ session }) {
+// irA (opcional): abre Anulaciones con la factura elegida, sin volver a buscarla allí.
+export default function Historial({ session, irA }) {
   const token = session.token;
+  const puedeAnular = Boolean(irA) && session.permisos.includes("FACTURA_ANULAR");
+  const anular = (f) => irA("FACTURA_ANULAR", { id_factura: f.id_factura });
   const [filtros, setFiltros] = useState(VACIO);
   const [idCliente, setIdCliente] = useState(null);
   const [resumen, setResumen] = useState(null);
@@ -83,7 +86,22 @@ export default function Historial({ session }) {
     if (reimprimir) setTimeout(() => window.print(), 100);
   }
 
-  if (factura) return <FacturaImpresa factura={factura} onVolver={() => setFactura(null)} onReimprimir={() => abrir(factura.id_factura, true)} />;
+  // Al abrir el historial se listan las facturas más recientes, sin tener que pulsar Buscar.
+  useEffect(() => {
+    consultar({ cliente: null, filtrosActuales: VACIO });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (factura) {
+    return (
+      <FacturaImpresa
+        factura={factura}
+        onVolver={() => setFactura(null)}
+        onReimprimir={() => abrir(factura.id_factura, true)}
+        onAnular={puedeAnular && factura.estado !== "ANULADA" ? () => anular(factura) : null}
+      />
+    );
+  }
 
   return (
     <div className="historial">
@@ -138,6 +156,12 @@ export default function Historial({ session }) {
                   <td>
                     <button className="ghost" onClick={() => abrir(f.id_factura, false)}>Ver</button>{" "}
                     <button className="ghost" onClick={() => abrir(f.id_factura, true)}>Reimprimir</button>
+                    {puedeAnular && f.estado !== "ANULADA" && (
+                      <>
+                        {" "}
+                        <button className="ghost" onClick={() => anular(f)}>Anular o devolver</button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -152,12 +176,13 @@ export default function Historial({ session }) {
 }
 
 // Misma factura que se emitió; la copia solo agrega el rótulo. window.print() imprime solo esta zona (styles.css).
-function FacturaImpresa({ factura, onVolver, onReimprimir }) {
+function FacturaImpresa({ factura, onVolver, onReimprimir, onAnular }) {
   return (
     <div className="historial">
       <div className="row no-print">
         <button className="ghost" onClick={onVolver}>← Volver al historial</button>
         <button className="primary" onClick={onReimprimir}>Reimprimir</button>
+        {onAnular && <button className="ghost" onClick={onAnular}>Anular o devolver</button>}
       </div>
       <div className="factura-impresion">
         <h3>Factura {factura.numero_factura}{factura.reimpresion ? ` — COPIA ${factura.reimpresion}` : ""}</h3>

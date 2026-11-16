@@ -632,6 +632,16 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
       ? `${urgentes} urgente${urgentes === 1 ? "" : "s"}`
       : `${alertas.total} alerta${alertas.total === 1 ? "" : "s"}`
     : "";
+  // Abrir otro módulo con datos (p. ej. el historial manda una factura a Anulaciones).
+  const irA = (codigo, datos = {}) => {
+    setPedido({ ...datos, n: Date.now() });
+    abrir(codigo);
+  };
+  // Desde el menú se abre el módulo limpio, sin el pedido de una navegación anterior.
+  const abrirDesdeMenu = (codigo) => {
+    setPedido(null);
+    abrir(codigo);
+  };
   const abrirAlertas = () => {
     setPedido({ pestana: "alertas", n: Date.now() });
     abrir("INVENTARIO_CONSULTAR");
@@ -723,7 +733,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
                     texto={modulo.titulo}
                     activo={activo === modulo.codigo}
                     etiquetas={etiquetas}
-                    onClick={() => abrir(modulo.codigo)}
+                    onClick={() => abrirDesdeMenu(modulo.codigo)}
                   />
                 ))}
               </ul>
@@ -861,7 +871,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
                   <button
                     key={modulo.codigo}
                     type="button"
-                    onClick={() => abrir(modulo.codigo)}
+                    onClick={() => abrirDesdeMenu(modulo.codigo)}
                     className="group flex flex-col items-start gap-3 rounded-2xl border border-linea bg-superficie p-5 text-left shadow-tarjeta transition-colors hover:border-linea-fuerte"
                   >
                     <span className="grid h-10 w-10 place-items-center rounded-xl bg-primario-suave text-primario-texto">
@@ -878,7 +888,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
             </section>
           )}
 
-          {detalle && Pantalla && <Pantalla key={detalle.codigo} session={session} ultimaSync={ultimaSync} pedido={pedido} estado={estado} />}
+          {detalle && Pantalla && <Pantalla key={detalle.codigo} session={session} ultimaSync={ultimaSync} pedido={pedido} estado={estado} irA={irA} />}
           {detalle && !Pantalla && (
             <article className="module">
               <h2>{detalle.titulo}</h2>

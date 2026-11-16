@@ -143,7 +143,8 @@ function LiberarReceta({ token, id, onListo }) {
 }
 
 // Criterio 1: el cajero escribe o escanea (el lector de barras escribe como un teclado y termina con Enter).
-function ValidarCodigo({ token, onListo }) {
+// También se usa dentro de la venta (Ventas.jsx) para validar la receta sin cambiar de pestaña.
+export function ValidarCodigo({ token, onListo }) {
   const [codigo, setCodigo] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");

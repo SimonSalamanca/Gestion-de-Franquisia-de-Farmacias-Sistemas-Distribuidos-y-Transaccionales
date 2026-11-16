@@ -87,7 +87,7 @@ El esquema base traía `cierre_caja` y `cierre_caja_metodo_pago` (sin uso), `fac
 | Rutas | `apps/api/routes/caja.mjs`, registradas en `apps/api/app.mjs` |
 | Bloqueo de ventas | `apps/api/ventas.mjs` (primera sentencia de `registrarVenta`) y el disparador de la base |
 | Esquema | `db/local/13_hu11_cierre_caja.sql` |
-| Interfaz | `apps/web/src/CierreCaja.jsx` (módulo "Cierre de caja": cerrar y cierres anteriores), aviso en `apps/web/src/Caja.jsx`, registro en `apps/web/src/App.jsx` |
+| Interfaz | `apps/web/src/CierreCaja.jsx` (módulo "Cierre de caja": cerrar y cierres anteriores), aviso en `apps/web/src/Caja.jsx`, registro en `apps/web/src/App.jsx`. Desde la fase 2 de flujos (2026-11-16) el cierre va por pasos (revisar el periodo, contar, confirmar y cerrar, abrir nueva caja) con las mismas rutas y validaciones; en la venta, el administrador tiene «Abrir caja ahora» si la caja está cerrada. |
 | Pruebas | `scripts/probar-hu11.mjs` (`npm run test:hu11`) |
 
 Cambios en código existente: `registrarVenta` (HU-08) consulta primero si la caja está abierta; `factura` y `anulacion_devolucion` ganan la columna `periodo_caja`. Todo lo anterior queda en el periodo 1.

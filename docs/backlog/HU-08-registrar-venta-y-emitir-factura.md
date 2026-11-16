@@ -77,7 +77,7 @@ Cualquier error revierte todo: factura, líneas, pagos, stock, movimientos, even
 | Rutas | `apps/api/routes/ventas.mjs`, registradas en `apps/api/app.mjs` |
 | Consolidado y réplica | `VENTA_REGISTRADA` en `apps/api/sync/central.mjs`; `METODO_PAGO_UPSERT` y la tasa en `apps/api/sync/handlers/catalogo.mjs`; emisión en `apps/api/migrate.mjs` |
 | Esquemas | `db/central/08_hu08_ventas.sql`, `db/local/07_hu08_ventas.sql` |
-| Interfaz | `apps/web/src/Ventas.jsx` (caja), `apps/web/src/Caja.jsx` (pestañas Venta y Recetas) |
+| Interfaz | `apps/web/src/Ventas.jsx` (caja), `apps/web/src/Caja.jsx` (pestañas Venta, Recetas e Historial). Desde la fase 2 de flujos (2026-11-16): la receta se valida en la misma línea de la venta (`ValidarCodigo` de `Recetas.jsx`), con la caja cerrada no se puede armar la venta, y hay atajos (Enter agrega el primer resultado, Esc limpia, Ctrl+Enter confirma). |
 | Impuestos demo | `IMPUESTOS` en `apps/api/demo.mjs` |
 | Pruebas | `scripts/probar-hu08.mjs` (`npm run test:hu08`) |
 
