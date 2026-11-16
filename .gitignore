@@ -27,7 +27,9 @@ AGENTS.md
 FARMAHUB_CONTEXT.md
 
 # Configuracion de agentes IA adicionales
-.claude/
+# Excepcion: .claude/settings.json se comparte para que Claude Code no firme los commits.
+.claude/*
+!.claude/settings.json
 
 # Configuracion del editor (no esencial para la aplicacion)
 .vscode/
