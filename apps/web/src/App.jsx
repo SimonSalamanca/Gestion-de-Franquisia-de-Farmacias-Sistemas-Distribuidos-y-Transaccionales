@@ -36,14 +36,28 @@ import RecetasEmitidas from "./RecetasEmitidas.jsx";
 import Reportes from "./Reportes.jsx";
 import ReportesRed from "./ReportesRed.jsx";
 import VistaRed from "./VistaRed.jsx";
+import Conectividad, { AvisoSimulacion } from "./Conectividad.jsx";
 import Abastecimiento from "./Abastecimiento.jsx";
 import CierreCaja from "./CierreCaja.jsx";
 
-const CUENTAS = [
-  { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
-  { usuario: "admin.tienda", password: "Farma123", rol: "Admin de tienda", nodo: "local" },
-  { usuario: "admin.general", password: "Farma123", rol: "Admin general", nodo: "central" },
-];
+// Cuentas de demostración de cada tienda (docs/operacion/nodos-locales.md) y la del administrador general (central).
+const CUENTAS_TIENDA = {
+  1: [
+    { usuario: "cajero1", password: "Farma123", rol: "Cajero", nodo: "local" },
+    { usuario: "admin.tienda", password: "Farma123", rol: "Admin de tienda", nodo: "local" },
+  ],
+  2: [
+    { usuario: "cajero2", password: "Farma123", rol: "Cajero", nodo: "local" },
+    { usuario: "admin.tienda2", password: "Farma123", rol: "Admin de tienda", nodo: "local" },
+  ],
+};
+const CUENTA_GENERAL = { usuario: "admin.general", password: "Farma123", rol: "Admin general", nodo: "central" };
+const cuentasDe = (idTienda) => [...(CUENTAS_TIENDA[idTienda] || CUENTAS_TIENDA[1]), CUENTA_GENERAL];
+const CAJEROS_DEMO = new Set(Object.values(CUENTAS_TIENDA).map((cuentas) => cuentas[0].usuario));
+
+// Identidad del nodo (id y nombre de su tienda). Se recuerda por dirección (cada tienda tiene la suya) para pintar su color
+// desde el primer instante; main.jsx la aplica antes de dibujar. styles.css define el color de cada tienda.
+const CLAVE_TIENDA = "farmahub:tienda";
 
 const AMBITO = {
   INVENTARIO_CONSULTAR: "tienda",
@@ -72,6 +86,33 @@ const PANTALLAS = {
   local: { INVENTARIO_CONSULTAR: InventarioAlertas, INVENTARIO_GESTIONAR: Lotes, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, PROVEEDOR_GESTIONAR: Abastecimiento, CAJA_CERRAR: CierreCaja, VENTA_REGISTRAR: Caja, FACTURA_ANULAR: Anulaciones, REPORTE_TIENDA_VER: Reportes },
   central: { RED_CONTROL: RecetasEmitidas, TIENDA_GESTIONAR: Tiendas, EMPLEADO_GESTIONAR: Empleados, AUDITORIA_CONSULTAR: Auditoria, PRECIO_GESTIONAR: Precios, PROVEEDOR_GESTIONAR: Abastecimiento, REPORTE_CONSOLIDADO_VER: ReportesRed, RED_VISIBILIDAD: VistaRed },
 };
+
+// Menú por secciones, ordenado por la tarea de cada rol (antes salía en el orden de los códigos de permiso).
+// CONECTIVIDAD es la demostración de conectividad: no es un permiso, la ven los administradores cuando está habilitada.
+const CONECTIVIDAD = "CONECTIVIDAD";
+const SECCIONES = [
+  { titulo: "Red", codigos: ["RED_VISIBILIDAD", "REPORTE_CONSOLIDADO_VER", "TIENDA_GESTIONAR", "RED_CONTROL"] },
+  { titulo: "Operación", codigos: ["VENTA_REGISTRAR", "CAJA_CERRAR", "FACTURA_ANULAR"] },
+  { titulo: "Inventario y abastecimiento", codigos: ["INVENTARIO_CONSULTAR", "INVENTARIO_GESTIONAR", "PROVEEDOR_GESTIONAR"] },
+  { titulo: "Análisis", codigos: ["REPORTE_TIENDA_VER"] },
+  { titulo: "Administración", codigos: ["PRECIO_GESTIONAR", "EMPLEADO_GESTIONAR", "AUDITORIA_CONSULTAR"] },
+  { titulo: "Herramientas", codigos: [CONECTIVIDAD] },
+];
+const MODULO_CONECTIVIDAD = {
+  codigo: CONECTIVIDAD,
+  titulo: "Conectividad",
+  texto: "Demostración de cómo opera la tienda sin el nodo central y cómo se recupera la sincronización.",
+};
+// Administradores: mismo criterio que el API (simulacion.mjs, PERMISO_ADMIN).
+const esAdministrador = (session) => session.permisos.includes("AUDITORIA_CONSULTAR");
+// Pantalla con la que abre cada rol: el cajero vende; el administrador general mira la red; el de tienda, su inicio.
+function moduloInicial(session, visibles) {
+  const tiene = (codigo) => visibles.some((m) => m.codigo === codigo);
+  if (session.nodo === "central" && tiene("RED_VISIBILIDAD")) return "RED_VISIBILIDAD";
+  if (!esAdministrador(session) && tiene("VENTA_REGISTRAR")) return "VENTA_REGISTRAR";
+  return null;
+}
+const lugarDe = (session) => (session.nodo === "central" ? "Red · todas las tiendas" : session.tienda);
 
 const ESTADO_TEXTO = { online: "En línea", degradado: "Conexión lenta", offline: "Sin conexión" };
 const NODO_TEXTO = { local: "Punto de venta", central: "Consola de red" };
@@ -102,14 +143,6 @@ function guardarPreferencia(clave, valor) {
   }
 }
 
-async function simularConectividad(body, onEstado, onForzado) {
-  const result = await api("/api/conectividad/simular", { method: "POST", body });
-  if (result.ok) {
-    onEstado(result.data.estado_real || result.data.estado);
-    onForzado(result.data.forzado);
-  }
-}
-
 export default function App() {
   const [session, setSession] = useState(() => {
     const raw = sessionStorage.getItem("farmahub");
@@ -121,6 +154,13 @@ export default function App() {
   const [ultimaSync, setUltimaSync] = useState(null);
   // El API informa si la simulación de conectividad está habilitada (en el despliegue no): sin ella no se muestran los botones.
   const [simulacion, setSimulacion] = useState(false);
+  const [simulacionActiva, setSimulacionActiva] = useState(null);
+  const [tienda, setTienda] = useState(() => leerPreferencia(CLAVE_TIENDA, null));
+  useEffect(() => {
+    if (!tienda?.id) return;
+    document.documentElement.dataset.tienda = String(tienda.id);
+    guardarPreferencia(CLAVE_TIENDA, tienda);
+  }, [tienda?.id, tienda?.nombre]);
 
   useEffect(() => {
     // Con `npm run dev` la web suele estar lista antes que el API (migra y sincroniza al arrancar):
@@ -144,6 +184,12 @@ export default function App() {
           setForzado(result.data.forzado);
           setUltimaSync(result.data.ultima_sync);
           setSimulacion(Boolean(result.data.simulacion));
+          setSimulacionActiva(result.data.simulacion_activa || null);
+          if (result.data.tienda?.id) {
+            setTienda((actual) =>
+              actual?.id === result.data.tienda.id && actual?.nombre === result.data.tienda.nombre ? actual : result.data.tienda,
+            );
+          }
         })
         .catch(() => {});
     }
@@ -172,10 +218,9 @@ export default function App() {
       <Login
         estado={estado}
         forzado={forzado}
-        simulacion={simulacion}
+        simulacionActiva={simulacionActiva}
+        tienda={tienda}
         ultimaSync={ultimaSync}
-        onEstado={setEstado}
-        onForzado={setForzado}
         onEnter={enter}
       />
     );
@@ -188,9 +233,8 @@ export default function App() {
       estado={estado}
       forzado={forzado}
       simulacion={simulacion}
+      simulacionActiva={simulacionActiva}
       ultimaSync={ultimaSync}
-      onEstado={setEstado}
-      onForzado={setForzado}
       onSalir={salir}
     />
   );
@@ -218,17 +262,21 @@ const ESQUINAS = {
   },
 };
 
+// Colores de la ilustración desde variables CSS (styles.css): cada tienda los tiñe con su color principal.
+const tono = (variable, alfa) => `rgb(var(--${variable}) / ${alfa})`;
+const trazo = (variable, alfa, relleno = "none") => ({ stroke: tono(variable, alfa), fill: relleno });
+
 function Farmacia({ x, y, s }) {
   return (
     <g transform={`translate(${x} ${y}) scale(${s})`} strokeWidth={1.4 / s}>
-      <rect x="0" y="22" width="80" height="58" rx="3" fill="rgb(214 232 224 / 0.07)" stroke="rgb(214 232 224 / 0.55)" />
-      <path d="M-5 22 3 6h74l8 16z" fill="rgb(214 232 224 / 0.1)" stroke="rgb(214 232 224 / 0.55)" />
-      <path d="M-5 22q5.6 7 11.2 0t11.2 0 11.2 0 11.2 0 11.2 0 11.2 0 11.2 0 11.2 0" fill="none" stroke="rgb(214 232 224 / 0.45)" />
-      <rect x="10" y="44" width="22" height="36" rx="1.5" fill="none" stroke="rgb(214 232 224 / 0.45)" />
-      <rect x="42" y="42" width="28" height="18" rx="1.5" fill="rgb(214 232 224 / 0.06)" stroke="rgb(214 232 224 / 0.45)" />
-      <circle cx="40" cy="-6" r="10" fill="rgb(63 122 103 / 0.55)" stroke="rgb(214 232 224 / 0.6)" />
-      <path d="M38.2-11.5h3.6v3.7h3.7v3.6h-3.7v3.7h-3.6v-3.7h-3.7v-3.6h3.7z" fill="rgb(236 244 240 / 0.85)" stroke="none" />
-      <line x1="40" y1="4" x2="40" y2="6" stroke="rgb(214 232 224 / 0.55)" />
+      <rect x="0" y="22" width="80" height="58" rx="3" style={trazo("ilus-linea", 0.55, tono("ilus-linea", 0.07))} />
+      <path d="M-5 22 3 6h74l8 16z" style={trazo("ilus-linea", 0.55, tono("ilus-linea", 0.1))} />
+      <path d="M-5 22q5.6 7 11.2 0t11.2 0 11.2 0 11.2 0 11.2 0 11.2 0 11.2 0 11.2 0" style={trazo("ilus-linea", 0.45)} />
+      <rect x="10" y="44" width="22" height="36" rx="1.5" style={trazo("ilus-linea", 0.45)} />
+      <rect x="42" y="42" width="28" height="18" rx="1.5" style={trazo("ilus-linea", 0.45, tono("ilus-linea", 0.06))} />
+      <circle cx="40" cy="-6" r="10" style={trazo("ilus-linea", 0.6, tono("ilus-cruz", 0.55))} />
+      <path d="M38.2-11.5h3.6v3.7h3.7v3.6h-3.7v3.7h-3.6v-3.7h-3.7v-3.6h3.7z" fill="rgb(255 255 255 / 0.85)" stroke="none" />
+      <line x1="40" y1="4" x2="40" y2="6" style={trazo("ilus-linea", 0.55)} />
     </g>
   );
 }
@@ -238,12 +286,12 @@ function RedDeFarmacias({ variante, className }) {
   return (
     <svg viewBox="0 0 460 340" className={className} aria-hidden="true" focusable="false">
       {enlaces.map(([x1, y1, x2, y2], i) => (
-        <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className="red-enlace" stroke="rgb(169 209 193 / 0.45)" strokeWidth="1.3" strokeLinecap="round" />
+        <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className="red-enlace" style={{ stroke: tono("ilus-nodo", 0.45) }} strokeWidth="1.3" strokeLinecap="round" />
       ))}
       {nodos.map(([cx, cy], i) => (
         <g key={i}>
-          <circle cx={cx} cy={cy} r="11" className="red-nodo-halo" fill="rgb(169 209 193 / 0.15)" style={{ animationDelay: `${i * 0.6}s` }} />
-          <circle cx={cx} cy={cy} r="4.5" fill="rgb(169 209 193 / 0.7)" />
+          <circle cx={cx} cy={cy} r="11" className="red-nodo-halo" style={{ fill: tono("ilus-nodo", 0.15), animationDelay: `${i * 0.6}s` }} />
+          <circle cx={cx} cy={cy} r="4.5" style={{ fill: tono("ilus-nodo", 0.7) }} />
         </g>
       ))}
       {tiendas.map((t, i) => (
@@ -270,7 +318,7 @@ function CampoLogin({ id, etiqueta, icono, extra, children }) {
   );
 }
 
-function PortadaLogin({ estado, ultimaSync, children, herramientas }) {
+function PortadaLogin({ estado, ultimaSync, tienda, simulacionActiva, children, herramientas }) {
   // Mientras se ve el login (o el restablecimiento), <html> lleva la clase login-activo: en el celular la página se
   // desplaza sin barra visible. Al entrar al panel la clase se quita y el panel no cambia.
   useEffect(() => {
@@ -287,10 +335,10 @@ function PortadaLogin({ estado, ultimaSync, children, herramientas }) {
         <div className="flex items-center gap-2.5">
           <Marca tamano={32} />
           <span className="text-[17px] font-semibold tracking-tight">FarmaHub</span>
-          <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-white/70">Red de farmacias</span>
+          <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-white/70">{tienda?.nombre || "Red de farmacias"}</span>
         </div>
         <span className="hidden items-center gap-2 text-[13px] text-white/75 sm:flex">
-          <span className={`h-1.5 w-1.5 rounded-full ${estado === "online" ? "bg-[#8fd1b4]" : estado === "degradado" ? "bg-[#e5c07b]" : "bg-[#e79a8f]"}`} aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 rounded-full ${estado === "online" ? "bg-[var(--punto-en-linea)]" : estado === "degradado" ? "bg-[#e5c07b]" : "bg-[#e79a8f]"}`} aria-hidden="true" />
           Nodo central: {ESTADO_TEXTO[estado] || estado}
         </span>
       </header>
@@ -301,11 +349,16 @@ function PortadaLogin({ estado, ultimaSync, children, herramientas }) {
           <div className="overflow-hidden rounded-2xl bg-superficie text-tinta shadow-flotante">
             <div className="px-6 py-7 sm:px-10 sm:py-9 bajo:py-6">{children}</div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-linea bg-suave px-6 py-3.5 text-[13px] text-tenue sm:px-10">
-              <span className={`pill ${estado}`}>{ESTADO_TEXTO[estado] || estado}</span>
+              <span className={`pill ${estado}`}>{ESTADO_TEXTO[estado] || estado}{simulacionActiva ? " (simulado)" : ""}</span>
               <span className="inline-flex items-center gap-1.5">
                 <Icono nombre="reloj" tamano={15} />
                 Última sincronización: {hora(ultimaSync)}
               </span>
+              {simulacionActiva && (
+                <p className="m-0 w-full text-[12.5px] text-aviso">
+                  Demostración en curso: «{simulacionActiva.titulo}», iniciada por {simulacionActiva.por}. No es una falla real.
+                </p>
+              )}
             </div>
           </div>
           {herramientas}
@@ -319,9 +372,14 @@ function PortadaLogin({ estado, ultimaSync, children, herramientas }) {
   );
 }
 
-function Login({ estado, forzado, simulacion, ultimaSync, onEstado, onForzado, onEnter }) {
+function Login({ estado, simulacionActiva, tienda, ultimaSync, onEnter }) {
+  const cuentas = cuentasDe(tienda?.id);
   const [nodo, setNodo] = useState("local");
-  const [usuario, setUsuario] = useState("cajero1");
+  const [usuario, setUsuario] = useState(cuentas[0].usuario);
+  // Al conocer la tienda del nodo, el usuario sugerido pasa a su cajero (solo si sigue el sugerido de otra tienda).
+  useEffect(() => {
+    setUsuario((actual) => (CAJEROS_DEMO.has(actual) ? cuentasDe(tienda?.id)[0].usuario : actual));
+  }, [tienda?.id]);
   const [password, setPassword] = useState("Farma123");
   const [verPassword, setVerPassword] = useState(false);
   const [error, setError] = useState("");
@@ -330,11 +388,10 @@ function Login({ estado, forzado, simulacion, ultimaSync, onEstado, onForzado, o
   const [restablecer, setRestablecer] = useState(false);
   const [aviso, setAviso] = useState("");
   const panelDemo = useCerrarFuera();
-  const simular = (body) => simularConectividad(body, onEstado, onForzado);
 
   if (restablecer) {
     return (
-      <PortadaLogin estado={estado} ultimaSync={ultimaSync}>
+      <PortadaLogin estado={estado} ultimaSync={ultimaSync} tienda={tienda}>
         <Restablecer
           nodo={nodo}
           usuarioInicial={usuario}
@@ -380,7 +437,7 @@ function Login({ estado, forzado, simulacion, ultimaSync, onEstado, onForzado, o
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 hover:bg-white/[0.04]">
         <span className="inline-flex items-center gap-2">
           <Icono nombre="ajustes" tamano={16} />
-          {simulacion ? "Cuentas de demostración y simulación" : "Cuentas de demostración"}
+          Cuentas de demostración
         </span>
         <Icono nombre="chevron" tamano={16} className="transition-transform group-open:rotate-90" />
       </summary>
@@ -389,7 +446,7 @@ function Login({ estado, forzado, simulacion, ultimaSync, onEstado, onForzado, o
         <div>
           <p className="m-0 mb-2 text-white/60">Contraseña de prueba: Farma123</p>
           <div className="grid gap-1.5 sm:grid-cols-3">
-            {CUENTAS.map((cuenta) => (
+            {cuentas.map((cuenta) => (
               <button
                 type="button"
                 key={cuenta.usuario}
@@ -408,20 +465,12 @@ function Login({ estado, forzado, simulacion, ultimaSync, onEstado, onForzado, o
             ))}
           </div>
         </div>
-        {simulacion && (
-          <div>
-            <p className="m-0 mb-2 text-white/60">
-              Conectividad con el central{forzado ? ` · forzada: ${ESTADO_TEXTO[forzado] || forzado}` : ""}
-            </p>
-            <BotonesSimulacion forzado={forzado} simular={simular} oscuro />
-          </div>
-        )}
       </div>
     </details>
   );
 
   return (
-    <PortadaLogin estado={estado} ultimaSync={ultimaSync} herramientas={herramientas}>
+    <PortadaLogin estado={estado} ultimaSync={ultimaSync} tienda={tienda} simulacionActiva={simulacionActiva} herramientas={herramientas}>
       <form onSubmit={submit} noValidate={false}>
         <h1 className="m-0 text-[26px] font-semibold tracking-tight">Iniciar sesión</h1>
         <p className="m-0 mt-1 text-tenue">Gestión de la red de farmacias</p>
@@ -488,40 +537,32 @@ function Login({ estado, forzado, simulacion, ultimaSync, onEstado, onForzado, o
   );
 }
 
-function BotonesSimulacion({ forzado, simular, oscuro = false }) {
-  const base = oscuro
-    ? "min-h-10 rounded-lg border border-white/12 bg-white/[0.06] px-3 text-[13px] text-white hover:bg-white/[0.12]"
-    : "ghost !min-h-9 !px-3 !text-[13px]";
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      <button type="button" className={base} onClick={() => simular({ probe: "ok" })}>Respuesta normal</button>
-      <button type="button" className={base} onClick={() => simular({ probe: "lento" })}>Latencia alta</button>
-      <button type="button" className={base} onClick={() => simular({ probe: "timeout", veces: 5 })}>5 timeouts</button>
-      <button type="button" className={base} onClick={() => simular({ estado: forzado ? "online" : "offline" })}>
-        {forzado ? "Quitar forzado" : "Forzar sin conexión"}
-      </button>
-    </div>
-  );
-}
-
 /* ====================================================================== Panel */
 
 const CLAVE_MENU = "farmahub:menu-contraido";
 
-function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onEstado, onForzado, onSalir }) {
+function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiva, ultimaSync, onSalir }) {
+  const puedeSimular = simulacion && esAdministrador(session);
   const visibles = useMemo(() => {
-    return session.permisos
+    const modulos = session.permisos
       .filter((codigo) => catalogo[codigo])
       .filter((codigo) => AMBITO[codigo] === "ambos" || AMBITO[codigo] === (session.nodo === "central" ? "red" : "tienda"))
       .map((codigo) => ({ codigo, ...catalogo[codigo] }));
-  }, [session, catalogo]);
+    return puedeSimular && modulos.length ? [...modulos, MODULO_CONECTIVIDAD] : modulos;
+  }, [session, catalogo, puedeSimular]);
+  // Secciones del menú con sus módulos visibles, en el orden de SECCIONES; lo que no esté listado va al final.
+  const secciones = useMemo(() => {
+    const listados = new Set(SECCIONES.flatMap((x) => x.codigos));
+    const grupos = SECCIONES.map((x) => ({ titulo: x.titulo, modulos: x.codigos.map((c) => visibles.find((m) => m.codigo === c)).filter(Boolean) }));
+    grupos.push({ titulo: "Otros", modulos: visibles.filter((m) => !listados.has(m.codigo)) });
+    return grupos.filter((x) => x.modulos.length);
+  }, [visibles]);
   const [activo, setActivo] = useState(null);
   const [detalle, setDetalle] = useState(null);
   const [error, setError] = useState("");
   // Menú lateral: contraído o desplegado se recuerda en este navegador; en pantallas medianas arranca contraído.
   const [contraido, setContraido] = useState(() => leerPreferencia(CLAVE_MENU, typeof window !== "undefined" && window.innerWidth < 1100));
   const [menuMovil, setMenuMovil] = useState(false);
-  const panelSimulacion = useCerrarFuera();
   // HU-04: indicador de alertas. En el POS (nodo local) se consulta cada 30 s; no depende del central.
   const [alertas, setAlertas] = useState(null);
   const [pedido, setPedido] = useState(null);
@@ -545,7 +586,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onE
     return () => window.removeEventListener("keydown", alTeclear);
   }, [menuMovil]);
 
-  const Pantalla = PANTALLAS[session.nodo]?.[detalle?.codigo];
+  const Pantalla = detalle?.codigo === CONECTIVIDAD ? Conectividad : PANTALLAS[session.nodo]?.[detalle?.codigo];
   const moduloActivo = visibles.find((m) => m.codigo === activo);
 
   function alternarMenu() {
@@ -566,6 +607,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onE
     setActivo(codigo);
     setError("");
     setMenuMovil(false);
+    if (codigo === CONECTIVIDAD) return setDetalle(MODULO_CONECTIVIDAD);
     const result = await api(`/api/${session.nodo}/modulos/${codigo}`, { token: session.token });
     if (!result.ok) {
       setDetalle(null);
@@ -575,7 +617,15 @@ function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onE
     setDetalle(result.data);
   }
 
-  const simular = (body) => simularConectividad(body, onEstado, onForzado);
+  // Al entrar, cada rol abre su pantalla principal (una sola vez; después manda lo que elija).
+  const abrioInicial = useRef(false);
+  useEffect(() => {
+    if (abrioInicial.current || visibles.length === 0) return;
+    abrioInicial.current = true;
+    const inicial = moduloInicial(session, visibles);
+    if (inicial) abrir(inicial);
+  }, [visibles]);
+
   const urgentes = alertas?.urgentes_sin_ver || 0;
   const textoAlertas = alertas
     ? urgentes > 0
@@ -596,7 +646,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onE
         Saltar al contenido
       </a>
 
-      {menuMovil && <div className="fixed inset-0 z-30 bg-[rgb(23_51_44/0.45)] md:hidden" onClick={() => setMenuMovil(false)} aria-hidden="true" />}
+      {menuMovil && <div className="fixed inset-0 z-30 bg-marca/45 md:hidden" onClick={() => setMenuMovil(false)} aria-hidden="true" />}
 
       <aside
         id="menu-lateral"
@@ -655,20 +705,30 @@ function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onE
         </div>
 
         <nav className="sin-barra flex-1 overflow-y-auto px-3 py-5" aria-label="Módulos">
-          {etiquetas && <p className="m-0 mb-3 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-tenue">Módulos de su rol</p>}
           <ul className="m-0 flex list-none flex-col gap-2 p-0">
             <ElementoMenu icono="inicio" texto="Inicio" activo={!activo} etiquetas={etiquetas} onClick={inicio} />
-            {visibles.map((modulo) => (
-              <ElementoMenu
-                key={modulo.codigo}
-                icono={ICONO_MODULO[modulo.codigo]}
-                texto={modulo.titulo}
-                activo={activo === modulo.codigo}
-                etiquetas={etiquetas}
-                onClick={() => abrir(modulo.codigo)}
-              />
-            ))}
           </ul>
+          {secciones.map((seccion) => (
+            <div key={seccion.titulo} role="group" aria-label={seccion.titulo} className="mt-5">
+              {etiquetas ? (
+                <p className="m-0 mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-tenue">{seccion.titulo}</p>
+              ) : (
+                <hr className="mx-3 mb-3 border-0 border-t border-linea" aria-hidden="true" />
+              )}
+              <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                {seccion.modulos.map((modulo) => (
+                  <ElementoMenu
+                    key={modulo.codigo}
+                    icono={modulo.codigo === CONECTIVIDAD ? "red" : ICONO_MODULO[modulo.codigo]}
+                    texto={modulo.titulo}
+                    activo={activo === modulo.codigo}
+                    etiquetas={etiquetas}
+                    onClick={() => abrir(modulo.codigo)}
+                  />
+                ))}
+              </ul>
+            </div>
+          ))}
           {Object.keys(catalogo).length === 0 && etiquetas && <p className="mt-4 px-3 text-[13px] text-tenue">Cargando módulos…</p>}
           {Object.keys(catalogo).length > 0 && visibles.length === 0 && etiquetas && (
             <p className="mt-4 px-3 text-[13px] text-tenue">Este acceso no tiene módulos en este nodo.</p>
@@ -712,7 +772,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onE
             <Icono nombre="menu" tamano={20} />
           </button>
           <div className="min-w-0 flex-1 leading-tight">
-            <div className="truncate text-[15px] font-semibold">{session.tienda}</div>
+            <div className="truncate text-[15px] font-semibold">{lugarDe(session)}</div>
             <div className="truncate text-[12.5px] text-tenue">{moduloActivo ? moduloActivo.titulo : "Inicio"}</div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -732,21 +792,6 @@ function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onE
             )}
             <span className={`pill ${estado} hidden sm:inline-flex`}>{ESTADO_TEXTO[estado] || estado}</span>
             {forzado && <span className={`pill ${forzado} hidden lg:inline-flex`}>Forzado: {ESTADO_TEXTO[forzado] || forzado}</span>}
-            {simulacion && (
-            <details ref={panelSimulacion} className="menu-simulacion relative">
-              <summary
-                className="grid h-9 w-9 cursor-pointer place-items-center rounded-lg border border-linea-fuerte bg-superficie text-tenue hover:text-tinta"
-                title="Simulación de conectividad"
-              >
-                <Icono nombre="ajustes" tamano={17} />
-                <span className="sr-only">Simulación de conectividad</span>
-              </summary>
-              <div className="absolute right-0 top-11 z-30 w-[290px] rounded-xl border border-linea bg-superficie p-3 shadow-flotante">
-                <p className="m-0 mb-2 text-[12px] font-semibold uppercase tracking-wider text-tenue">Simulación de conectividad</p>
-                <BotonesSimulacion forzado={forzado} simular={simular} />
-              </div>
-            </details>
-            )}
           </div>
         </header>
 
@@ -760,13 +805,13 @@ function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onE
                 <div className="truncate text-[17px] font-semibold">{session.nombre}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-tenue">
                   <span className="badge">{session.rol_etiqueta}</span>
-                  <span className="truncate">{session.tienda}</span>
+                  <span className="truncate">{lugarDe(session)}</span>
                 </div>
               </div>
             </div>
             <dl className="m-0 grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3 lg:flex lg:gap-10">
               <Dato titulo="Estado">
-                <span className={`pill ${estado}`}>{ESTADO_TEXTO[estado] || estado}</span>
+                <span className={`pill ${estado}`}>{ESTADO_TEXTO[estado] || estado}{simulacionActiva ? " (simulado)" : ""}</span>
               </Dato>
               <Dato titulo="Última sincronización">
                 <span className="inline-flex items-center gap-1.5 font-semibold">
@@ -791,6 +836,14 @@ function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onE
               )}
             </dl>
           </section>
+
+          {simulacionActiva && (
+            <AvisoSimulacion
+              simulacion={simulacionActiva}
+              puedeGestionar={puedeSimular && activo !== CONECTIVIDAD}
+              onAbrir={() => abrir(CONECTIVIDAD)}
+            />
+          )}
 
           {error && (
             <div className="error mb-4" role="alert">
@@ -825,7 +878,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onE
             </section>
           )}
 
-          {detalle && Pantalla && <Pantalla key={detalle.codigo} session={session} ultimaSync={ultimaSync} pedido={pedido} />}
+          {detalle && Pantalla && <Pantalla key={detalle.codigo} session={session} ultimaSync={ultimaSync} pedido={pedido} estado={estado} />}
           {detalle && !Pantalla && (
             <article className="module">
               <h2>{detalle.titulo}</h2>

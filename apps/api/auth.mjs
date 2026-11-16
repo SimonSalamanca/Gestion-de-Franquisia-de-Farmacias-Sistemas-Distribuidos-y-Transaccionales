@@ -24,7 +24,8 @@ export const MODULES = {
   REPORTE_TIENDA_VER: { titulo: "Reportes", ambito: "tienda", texto: "Ventas por método de pago, más vendidos, stock crítico y caducidad, con exportación." },
   CAJA_CERRAR: { titulo: "Cierre de caja", ambito: "tienda", texto: "Total por método de pago comparado con el efectivo contado." },
   RED_VISIBILIDAD: { titulo: "Vista de red", ambito: "red", texto: "Inventario, ventas e ingresos consolidados. No es tiempo real estricto." },
-  RED_CONTROL: { titulo: "Control de red", ambito: "red", texto: "Alta, edición y umbrales de las tiendas de la cadena." },
+  // La pantalla de la consola es la de recetas emitidas por la EPS (HU-12); el alta y la configuración de tiendas están en TIENDA_GESTIONAR.
+  RED_CONTROL: { titulo: "Recetas emitidas (EPS)", ambito: "red", texto: "Recetas que emite la EPS para toda la red y su estado de uso en las tiendas." },
   TIENDA_GESTIONAR: { titulo: "Tiendas", ambito: "red", texto: "Registro y configuración de sucursales." },
   REPORTE_CONSOLIDADO_VER: { titulo: "Reportes de red", ambito: "red", texto: "Comparativo entre tiendas y exportación." },
 };

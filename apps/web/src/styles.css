@@ -57,6 +57,14 @@
 
 /* ---------- Base ---------- */
 @layer base {
+  /* Colores de apoyo en RGB (para usarlos con transparencia): anillo de foco, resplandor del login e ilustraciones. */
+  :root {
+    --anillo: 46 106 88;
+    --ilus-linea: 214 232 224;
+    --ilus-nodo: 169 209 193;
+    --ilus-cruz: 63 122 103;
+    --punto-en-linea: #8fd1b4;
+  }
   *, *::before, *::after { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
   body {
@@ -89,13 +97,34 @@
   input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
     outline: none;
     border-color: var(--color-primario);
-    box-shadow: 0 0 0 3px rgb(46 106 88 / 0.18);
+    box-shadow: 0 0 0 3px rgb(var(--anillo) / 0.18);
   }
   input[type="checkbox"], input[type="radio"] { accent-color: var(--color-primario); width: 16px; height: 16px; vertical-align: -2px; }
   :focus-visible { outline: 2px solid var(--color-primario); outline-offset: 2px; }
   ::selection { background: var(--color-primario-suave); }
   table { font-variant-numeric: tabular-nums; }
   code { font-size: 12px; color: var(--color-tenue); }
+}
+
+/* ---------- Identidad por tienda ----------
+   Cada nodo local pinta su color principal para distinguirlo a simple vista (la web lo sabe por /api/conectividad).
+   Tienda 1 (Farmacia Centro): el verde de la marca, por defecto. Tienda 2 (Farmacia Norte): amarillo semioscuro.
+   Solo cambia el color principal y sus tonos; los estados (éxito, aviso, error, información) conservan su significado. */
+@layer components {
+  :root[data-tienda="2"] {
+    --color-marca: #2c2410;
+    --color-marca-2: #3a2f15;
+    --color-primario: #8a6a12;
+    --color-primario-hover: #6f5410;
+    --color-primario-suave: #f5eed9;
+    --color-primario-texto: #6b500c;
+    --color-grafico: #a8841e;
+    --anillo: 138 106 18;
+    --ilus-linea: 240 226 190;
+    --ilus-nodo: 224 196 120;
+    --ilus-cruz: 138 106 18;
+    --punto-en-linea: #e8cf86;
+  }
 }
 
 /* ---------- Componentes (clases que usan los módulos) ---------- */
@@ -127,7 +156,7 @@
   .enlace {
     background: none; border: 0; padding: 0;
     color: var(--color-primario-texto); font-weight: 550; text-align: left;
-    text-decoration: underline; text-decoration-color: rgb(36 86 74 / 0.35); text-underline-offset: 3px;
+    text-decoration: underline; text-decoration-color: rgb(var(--anillo) / 0.35); text-underline-offset: 3px;
   }
   .enlace:hover { text-decoration-color: currentColor; }
 
@@ -292,7 +321,7 @@
   .login-fondo {
     background-color: var(--color-marca);
     background-image:
-      radial-gradient(ellipse 70% 60% at 50% 45%, rgb(46 106 88 / 0.35), transparent 70%),
+      radial-gradient(ellipse 70% 60% at 50% 45%, rgb(var(--anillo) / 0.35), transparent 70%),
       linear-gradient(rgb(255 255 255 / 0.035) 1px, transparent 1px),
       linear-gradient(90deg, rgb(255 255 255 / 0.035) 1px, transparent 1px);
     background-size: auto, 40px 40px, 40px 40px;

@@ -249,8 +249,9 @@ export async function listarCuentas(idActor, query = {}) {
   ]);
   return {
     empleados: cuentas.rows.map((cuenta) => vista(cuenta)),
+    // Solo los roles del sistema: la base puede tener roles creados por pruebas (p. ej. hu16_control_*) que no se asignan.
     roles: roles.rows
-      .filter((rol) => general || ROLES_DE_TIENDA.includes(rol.nombre))
+      .filter((rol) => ETIQUETA_ROL[rol.nombre] && (general || ROLES_DE_TIENDA.includes(rol.nombre)))
       .map((rol) => ({ ...rol, etiqueta: ETIQUETA_ROL[rol.nombre] || rol.nombre })),
     tiendas: tiendas.rows,
     actor: { id_empleado: actor.id_empleado, rol: actor.rol, id_tienda: actor.id_tienda },

@@ -44,8 +44,8 @@ Cada `git push` a `main` vuelve a desplegar los dos servicios (`autoDeploy`).
 
 ## Variables fijas del Blueprint
 
-- `FARMAHUB_SIMULACION=0`: sin el endpoint de simulación de conectividad (en internet cualquiera podría forzar "sin conexión").
-  La web oculta los botones de simulación cuando está apagado.
+- `FARMAHUB_SIMULACION=0`: sin la demostración de conectividad (docs/operacion/demostracion-conectividad.md). El panel no
+  aparece y su API responde 404.
 - `SEED_DEMO=0`: el despliegue no siembra datos de demostración.
 - No se define `NODE_ENV=production`: ese modo exige un `AUTH_PEPPER` propio, y las contraseñas actuales se calcularon con el
   pepper de desarrollo, así que ninguna cuenta podría entrar. Para pasar a producción hay que definir `AUTH_PEPPER` y regenerar
@@ -57,7 +57,7 @@ Cada `git push` a `main` vuelve a desplegar los dos servicios (`autoDeploy`).
   En desarrollo no hay `dist` compilado relevante: la web la sirve Vite en el puerto 5173.
 - `apps/api/config.mjs`: sin archivo `.env`, usa las variables del entorno.
 - `apps/api/server.mjs`: cierra ordenadamente con `SIGTERM` (Render lo envía al redesplegar o dormir el servicio).
-- `GET /api/conectividad` informa `simulacion`, y la web muestra los botones solo si está habilitada.
+- `GET /api/conectividad` informa `simulacion` (si la demostración está habilitada) y `tienda` (id y nombre del nodo).
 
 ## Pruebas del despliegue
 

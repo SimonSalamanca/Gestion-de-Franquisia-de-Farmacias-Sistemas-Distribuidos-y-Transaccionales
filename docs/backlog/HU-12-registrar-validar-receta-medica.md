@@ -103,7 +103,7 @@ SQLSTATE `23514` con el prefijo `RECETA_*`; `traducirErrorReceta(error)` lo conv
 | Rutas | `apps/api/routes/recetas.mjs`, registradas en `apps/api/app.mjs` |
 | Baja en el central | `RECETA_DISPENSADA` en `apps/api/sync/central.mjs` |
 | Esquemas | `db/local/05_hu12_recetas.sql`, `db/local/06_hu12_validacion_central.sql`, `db/central/07_hu12_recetas_emitidas.sql` |
-| Interfaz | `apps/web/src/Recetas.jsx` (POS), `apps/web/src/RecetasEmitidas.jsx` (consola, módulo "Control de red") |
+| Interfaz | `apps/web/src/Recetas.jsx` (POS), `apps/web/src/RecetasEmitidas.jsx` (consola, módulo "Recetas emitidas (EPS)", permiso RED_CONTROL) |
 | Recetas demo | `RECETAS_EMITIDAS` en `apps/api/demo.mjs`: `RX-DEMO-001`, `RX-DEMO-002` y `RX-DEMO-VENCIDA` |
 | Pruebas | `scripts/probar-hu12.mjs`, `scripts/probar-hu12-central.mjs` (`npm run test:hu12`) |
 

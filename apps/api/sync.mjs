@@ -11,7 +11,17 @@ export const link = {
   ultimaSync: null,
   probing: false,
   ultimoProbe: null,
+  // Demostración de conectividad (simulacion.mjs): mientras está vigente, cada chequeo al central da el resultado simulado en
+  // lugar de consultar la base, así el estado cambia por el mismo camino que una falla real (timeouts, corte, degradado).
+  // { escenario, titulo, resultado, desde, hasta, por }. No toca `force` (HU-06: forzado es otro campo y no pisa el estado real).
+  simulacion: null,
 };
+
+// Simulación vigente; al vencer se descarta y el próximo chequeo vuelve a consultar el central de verdad.
+export function simulacionVigente() {
+  if (link.simulacion && Date.now() >= link.simulacion.hasta) link.simulacion = null;
+  return link.simulacion;
+}
 
 export function estadoReal() {
   return link.estado;
@@ -30,6 +40,10 @@ export function conectividad() {
     ultima_sync: link.ultimaSync,
     probe_fallos: link.failures,
     ultimo_probe: link.ultimoProbe,
+    // Todos los usuarios de la tienda ven el aviso de una simulación activa (sin el detalle del resultado inyectado).
+    simulacion_activa: simulacionVigente()
+      ? { escenario: link.simulacion.escenario, titulo: link.simulacion.titulo, desde: link.simulacion.desde, hasta: new Date(link.simulacion.hasta).toISOString(), por: link.simulacion.por }
+      : null,
   };
 }
 
@@ -58,6 +72,11 @@ export function inyectarProbe(resultado, veces = 1) {
 
 export async function probeCentral() {
   if (link.probing || Date.now() < link.openedUntil) return estadoReal();
+  const simulada = simulacionVigente();
+  if (simulada?.resultado) {
+    aplicarResultadoProbe(simulada.resultado);
+    return estadoReal();
+  }
   link.probing = true;
   const started = Date.now();
   const query = central.query("select 1");
