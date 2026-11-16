@@ -206,3 +206,13 @@ Nota: las primeras corridas de prueba dejaron proveedores activos en la tienda y
 | Auditor GPT-5.6 Luna | pendiente (sin `APROBADO` la historia no está lista para el backlog según `AGENTS.md`) |
 | Subagentes técnicos | `analista-contexto`, `redactor-criterios` y `disenador-flujos`: pendientes; el Gherkin de arriba es provisional |
 | Implementación y pruebas | Ver "Pruebas" (2026-11-09) |
+
+## Flujo de punta a punta en la interfaz (fase 3 de flujos, 2026-11-16)
+
+Sin cambios de API ni de base. El reabastecimiento se recorre sin buscar en otros módulos:
+
+1. **Alerta** (Inventario → Alertas): «Generar solicitud» y, al crearla, «Ver la solicitud».
+2. **Solicitud** (Proveedores → Solicitudes): llega resaltada, con su línea de estado (Solicitada → Enviada al proveedor → Recibida) y el botón «Recibir mercancía».
+3. **Recepción** (Lotes y recepción → Recibir pedido, HU-14): se abre con esa solicitud ya elegida.
+
+El inicio del administrador de tienda muestra «Pendientes de hoy»: solicitudes por enviar y por recibir, junto con caja, alertas y traslados en curso, cada uno con su acceso directo.

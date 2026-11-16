@@ -37,6 +37,7 @@ import Reportes from "./Reportes.jsx";
 import ReportesRed from "./ReportesRed.jsx";
 import VistaRed from "./VistaRed.jsx";
 import Conectividad, { AvisoSimulacion } from "./Conectividad.jsx";
+import Pendientes from "./Pendientes.jsx";
 import Abastecimiento from "./Abastecimiento.jsx";
 import CierreCaja from "./CierreCaja.jsx";
 
@@ -860,6 +861,10 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
               {error}
               {ultimaSync ? ` Última sincronización: ${new Date(ultimaSync).toLocaleString()}` : ""}
             </div>
+          )}
+
+          {!activo && session.nodo === "local" && esAdministrador(session) && (
+            <Pendientes session={session} alertas={alertas} irA={irA} />
           )}
 
           {!activo && (

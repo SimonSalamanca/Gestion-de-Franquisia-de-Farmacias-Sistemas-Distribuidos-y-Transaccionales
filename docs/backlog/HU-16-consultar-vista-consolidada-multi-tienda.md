@@ -302,3 +302,12 @@ where tipo_evento in ('VENTA_REGISTRADA', 'DEVOLUCION_REGISTRADA') and payload -
 | Análisis y plan | 2026-11-09: consolidación periódica como latido; ventas por categoría en una tabla nueva (autorizada); pantalla para `RED_VISIBILIDAD` |
 | Implementación | 2026-11-09 en la rama `hu-16` (ver "Implementación") |
 | Pruebas | 2026-11-09 en el clon Docker: HU-16 56/56, interfaz 30/30 en Chrome y Edge, regresión completa en verde (13 suites, incluidas HU-06 y HU-12 tras corregir sus pruebas) |
+
+## Vista de red y Reportes de red (fase 3 de flujos, 2026-11-16)
+
+Para que cada módulo tenga un propósito claro en la consola:
+
+- **Vista de red** (esta HU): cómo está la red ahora. Abre en el día de hoy y conserva los filtros por tienda, rango de fechas y categoría (criterio 4). Se quitaron las barras de ingresos por tienda (ya están en la tabla de tiendas) y la tabla por método de pago (es de Reportes de red). Tiene un acceso a Reportes de red.
+- **Reportes de red** (HU-05): análisis histórico, comparativo entre tiendas por periodo, método de pago y exportación. Tiene un acceso de vuelta a la Vista de red.
+
+Sin cambios de API.

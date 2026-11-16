@@ -4,7 +4,7 @@ import Alertas from "./Alertas.jsx";
 
 // Módulo "Inventario" del POS: existencias (HU-01) y alertas de stock y caducidad (HU-04). Las dos pestañas quedan
 // montadas para no perder la búsqueda. `pedido` lo envía el indicador de la barra superior para abrir las alertas.
-export default function InventarioAlertas({ session, ultimaSync, pedido }) {
+export default function InventarioAlertas({ session, ultimaSync, pedido, irA }) {
   const [pestana, setPestana] = useState(pedido?.pestana ?? "existencias");
   useEffect(() => {
     if (pedido?.pestana) setPestana(pedido.pestana);
@@ -19,7 +19,7 @@ export default function InventarioAlertas({ session, ultimaSync, pedido }) {
         </div>
       </header>
       <div hidden={pestana !== "existencias"}><Inventario session={session} ultimaSync={ultimaSync} incrustada /></div>
-      {pestana === "alertas" && <Alertas session={session} />}
+      {pestana === "alertas" && <Alertas session={session} irA={irA} />}
     </article>
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
 import { fechaHora } from "./inventarioUi.jsx";
 import { ESTADOS, mensajeError, useEnvio } from "./abastecimientoUi.jsx";
@@ -28,8 +28,10 @@ function SelectorProveedor({ proveedores, valor, onChange }) {
   );
 }
 
-export default function Solicitudes({ session }) {
+// pedido.id_pedido: la solicitud a resaltar (llega desde una alerta). irA: ir a recibir la mercancía en Lotes y recepción.
+export default function Solicitudes({ session, pedido, irA }) {
   const token = session.token;
+  const puedeRecibir = Boolean(irA) && session.permisos.includes("INVENTARIO_GESTIONAR");
   const [filtro, setFiltro] = useState("");
   const [datos, setDatos] = useState(null);
   const [error, setError] = useState("");
@@ -70,14 +72,54 @@ export default function Solicitudes({ session }) {
       {datos && datos.solicitudes.length === 0 && <div className="inv-vacio">No hay solicitudes{filtro ? " con ese estado" : ""}.</div>}
       <ul className="inv-lista">
         {(datos?.solicitudes || []).map((s) => (
-          <Solicitud key={s.id_pedido} s={s} token={token} onCambio={() => setVersion((v) => v + 1)} />
+          <Solicitud
+            key={s.id_pedido}
+            s={s}
+            token={token}
+            onCambio={() => setVersion((v) => v + 1)}
+            resaltada={String(pedido?.id_pedido) === String(s.id_pedido)}
+            onRecibir={puedeRecibir ? () => irA("INVENTARIO_GESTIONAR", { pestana: "recibir", id_pedido: s.id_pedido }) : null}
+          />
         ))}
       </ul>
     </div>
   );
 }
 
-function Solicitud({ s, token, onCambio }) {
+// Línea de estado de la solicitud: dónde está y qué sigue.
+const ETAPAS = [
+  ["PENDIENTE", "Solicitada"],
+  ["ENVIADA", "Enviada al proveedor"],
+  ["RECIBIDA", "Recibida"],
+];
+function etapaDe(estado) {
+  if (estado === "RECIBIDA") return 2;
+  if (estado === "RECIBIDA_PARCIAL") return 1.5;
+  if (estado === "ENVIADA") return 1;
+  return 0;
+}
+function LineaEstado({ estado }) {
+  if (estado === "CANCELADA") return null;
+  const actual = etapaDe(estado);
+  return (
+    <ol className="m-0 mt-2 flex list-none flex-wrap items-center gap-1.5 p-0 text-[12.5px]" aria-label="Avance de la solicitud">
+      {ETAPAS.map(([clave, texto], i) => {
+        const hecha = i === 0 || (i === 1 && actual >= 1) || (i === 2 && actual === 2);
+        const parcial = i === 2 && actual === 1.5;
+        return (
+          <li key={clave} className="flex items-center gap-1.5">
+            {i > 0 && <span className="h-px w-4 bg-linea-fuerte" aria-hidden="true" />}
+            <span className={`pill ${parcial ? "media" : hecha ? "disponible" : ""}`}>
+              {parcial ? "Recibida en parte" : texto}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function Solicitud({ s, token, onCambio, resaltada, onRecibir }) {
   const { enviar, ocupado } = useEnvio(token);
   const [cancelando, setCancelando] = useState(false);
   const [motivo, setMotivo] = useState("");
@@ -85,6 +127,10 @@ function Solicitud({ s, token, onCambio }) {
   const [recepciones, setRecepciones] = useState(null);
   const estado = ESTADOS[s.estado_visible];
   const tieneRecepciones = ["RECIBIDA", "RECIBIDA_PARCIAL"].includes(s.estado_visible) || s.con_diferencia;
+  const fila = useRef(null);
+  useEffect(() => {
+    if (resaltada) fila.current?.scrollIntoView({ block: "center" });
+  }, [resaltada]);
 
   // HU-14: la recepción queda ligada a la solicitud: quién recibió, cuándo, qué lote y qué diferencias quedaron.
   async function verRecepciones() {
@@ -103,7 +149,7 @@ function Solicitud({ s, token, onCambio }) {
   }
 
   return (
-    <li className="inv-item">
+    <li ref={fila} className={`inv-item ${resaltada ? "!border-primario ring-2 ring-primario/20" : ""}`} aria-current={resaltada ? "true" : undefined}>
       <div className="inv-fila">
         <div>
           <strong>Solicitud {s.id_pedido}</strong> <span className={`pill ${estado.pill}`}>{estado.etiqueta}</span>{s.con_diferencia && <> <span className="pill bajo">Con diferencia</span></>} · {s.proveedor}
@@ -124,13 +170,17 @@ function Solicitud({ s, token, onCambio }) {
         </div>
         <div className="inv-stock">
           {s.estado_visible === "PENDIENTE" && <button className="ghost" disabled={ocupado} onClick={() => accion("enviar")}>Marcar como enviada</button>}
+          {onRecibir && ["PENDIENTE", "ENVIADA", "RECIBIDA_PARCIAL"].includes(s.estado_visible) && (
+            <button className="primary" onClick={onRecibir}>Recibir mercancía</button>
+          )}
           {tieneRecepciones && <button className="ghost" onClick={verRecepciones}>{recepciones ? "Ocultar recepciones" : "Ver recepciones"}</button>}
           {(s.estado_visible === "PENDIENTE" || s.estado_visible === "ENVIADA") && (
             <button className="ghost" onClick={() => setCancelando((v) => !v)}>{cancelando ? "No cancelar" : "Cancelar"}</button>
           )}
         </div>
       </div>
-      {(s.estado_visible === "PENDIENTE" || s.estado_visible === "ENVIADA") && (
+      <LineaEstado estado={s.estado_visible} />
+      {!onRecibir && (s.estado_visible === "PENDIENTE" || s.estado_visible === "ENVIADA") && (
         <p className="muted">La mercancía se recibe en «Lotes y recepción».</p>
       )}
       {recepciones && (
@@ -250,7 +300,8 @@ function FormManual({ token, onListo }) {
 
 // Criterio 2: desde una alerta de stock bajo o agotado. El producto, la cantidad sugerida y el proveedor habitual salen de
 // la alerta: no se vuelven a ingresar. Se muestra bajo la alerta en Inventario > Alertas.
-export function SolicitudDeAlerta({ token, idAlerta, onListo }) {
+// irA (opcional): tras generarla, ir a la solicitud en el módulo Proveedores.
+export function SolicitudDeAlerta({ token, idAlerta, onListo, irA }) {
   const proveedores = useProveedoresActivos(token);
   const { enviar, ocupado } = useEnvio(token);
   const [sugerencia, setSugerencia] = useState(null);
@@ -279,7 +330,18 @@ export function SolicitudDeAlerta({ token, idAlerta, onListo }) {
     onListo?.(r.data);
   }
 
-  if (creada) return <div className="ok">Solicitud {creada.id_pedido} generada ({creada.proveedor}). Puede seguir su estado en el módulo Proveedores.</div>;
+  if (creada) {
+    return (
+      <div className="ok">
+        Solicitud {creada.id_pedido} generada ({creada.proveedor}).{" "}
+        {irA ? (
+          <button type="button" className="enlace" onClick={() => irA("PROVEEDOR_GESTIONAR", { id_pedido: creada.id_pedido })}>Ver la solicitud</button>
+        ) : (
+          "Puede seguir su estado en el módulo Proveedores."
+        )}
+      </div>
+    );
+  }
   return (
     <form className="subform" onSubmit={generar}>
       {error && <div className="error">{error}</div>}

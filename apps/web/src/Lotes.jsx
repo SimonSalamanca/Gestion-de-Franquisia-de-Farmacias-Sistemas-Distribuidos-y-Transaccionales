@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
 import { EstadoLote, HistorialLote, Indicadores, alertaCaducidad, fechaCorta } from "./inventarioUi.jsx";
 import Traslados from "./Traslados.jsx";
@@ -41,8 +41,9 @@ function mensajeError(r) {
   return mensaje ? (linea && !mensaje.startsWith("Línea") ? `Línea ${linea}: ${mensaje}` : mensaje) : "No se pudo completar la operación";
 }
 
-export default function Lotes({ session }) {
-  const [pestana, setPestana] = useState("lotes");
+// pedido { pestana, id_pedido }: abre una pestaña (p. ej. «recibir» desde Proveedores → «Recibir mercancía», o «traslados»).
+export default function Lotes({ session, pedido }) {
+  const [pestana, setPestana] = useState(PESTANAS.some(([id]) => id === pedido?.pestana) ? pedido.pestana : "lotes");
   const [version, setVersion] = useState(0);
   const cambio = () => setVersion((v) => v + 1);
   return (
@@ -60,7 +61,7 @@ export default function Lotes({ session }) {
       </div>
       {pestana === "lotes" && <ListaLotes token={session.token} version={version} onCambio={cambio} />}
       {pestana === "registrar" && <RegistrarLote token={session.token} onCambio={cambio} />}
-      {pestana === "recibir" && <RecibirPedido token={session.token} onCambio={cambio} />}
+      {pestana === "recibir" && <RecibirPedido token={session.token} onCambio={cambio} idPedido={pedido?.pestana === "recibir" ? pedido.id_pedido : null} />}
       {pestana === "traslados" && <Traslados session={session} />}
     </article>
   );
@@ -308,7 +309,7 @@ function RegistrarLote({ token, onCambio }) {
 // inventario con lote y proveedor, queda ligada al pedido y deja constancia de las diferencias (faltante o sobrante).
 const diferenciaTexto = (d) => (d.tipo === "SOBRANTE" ? `sobran ${d.diferencia}` : `faltan ${Math.abs(d.diferencia)}`);
 
-function RecibirPedido({ token, onCambio }) {
+function RecibirPedido({ token, onCambio, idPedido }) {
   const { enviar, ocupado } = useEnvio(token);
   const [pedidos, setPedidos] = useState(null);
   const [elegido, setElegido] = useState(null);
@@ -328,6 +329,15 @@ function RecibirPedido({ token, onCambio }) {
     });
   }, [token]);
   useEffect(cargar, [cargar]);
+  // Si llega una solicitud elegida, se abre de una vez (una sola vez: después manda lo que elija el usuario).
+  const yaElegido = useRef(false);
+  useEffect(() => {
+    if (yaElegido.current || !idPedido || !pedidos) return;
+    yaElegido.current = true;
+    const p = pedidos.find((x) => String(x.id_pedido) === String(idPedido));
+    if (p) elegir(p);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedidos, idPedido]);
 
   function elegir(pedido) {
     setElegido(pedido);

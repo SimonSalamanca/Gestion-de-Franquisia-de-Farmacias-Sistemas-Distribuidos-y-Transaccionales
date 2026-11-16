@@ -12,7 +12,8 @@ import { Frescura } from "./VistaRed.jsx";
 const hoyUtc = () => new Date().toISOString().slice(0, 10);
 const cuando = (fecha) => (fecha ? fechaHora(fecha) : "nunca");
 
-export default function ReportesRed({ session }) {
+// Análisis histórico de la red (HU-05). El estado actual de cada tienda es la Vista de red (irA, opcional).
+export default function ReportesRed({ session, irA }) {
   const [periodo, setPeriodo] = useState(() => ({ desde: `${hoyUtc().slice(0, 8)}01`, hasta: hoyUtc() }));
   const [datos, setDatos] = useState(null);
   const [error, setError] = useState("");
@@ -99,6 +100,12 @@ export default function ReportesRed({ session }) {
         </div>
         <Exportar onExcel={excel} deshabilitado={!datos || cargando} />
       </header>
+      {irA && session.permisos.includes("RED_VISIBILIDAD") && (
+        <p className="no-print m-0 mt-3 text-[14px] text-tenue">
+          Para comparar periodos y exportar. ¿Quiere saber cómo está cada tienda ahora mismo?{" "}
+          <button type="button" className="enlace" onClick={() => irA("RED_VISIBILIDAD")}>Ir a la Vista de red</button>
+        </p>
+      )}
       <Periodo periodo={periodo} onCambiar={setPeriodo} cargando={cargando} />
       {error && <div className="error">{error}</div>}
 

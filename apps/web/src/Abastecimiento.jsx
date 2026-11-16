@@ -4,7 +4,7 @@ import Solicitudes from "./Solicitudes.jsx";
 
 // Módulo "Proveedores" (HU-13). En el POS: solicitudes de reabastecimiento y registro de proveedores. En la consola de red:
 // solo el registro de proveedores (las solicitudes son de cada tienda y viven en su base).
-export default function Abastecimiento({ session }) {
+export default function Abastecimiento({ session, pedido, irA }) {
   const hayTienda = session.nodo === "local";
   const [pestana, setPestana] = useState(hayTienda ? "solicitudes" : "proveedores");
   return (
@@ -18,7 +18,7 @@ export default function Abastecimiento({ session }) {
           </div>
         )}
       </header>
-      {hayTienda && pestana === "solicitudes" && <Solicitudes session={session} />}
+      {hayTienda && pestana === "solicitudes" && <Solicitudes session={session} pedido={pedido} irA={irA} />}
       {pestana === "proveedores" && <Proveedores session={session} />}
     </article>
   );

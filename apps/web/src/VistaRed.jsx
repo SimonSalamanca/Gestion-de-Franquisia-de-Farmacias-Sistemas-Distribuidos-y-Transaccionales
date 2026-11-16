@@ -14,7 +14,8 @@ const PARAMS = { desde: "vr_desde", hasta: "vr_hasta", tienda: "vr_tienda", cate
 function filtrosDeUrl() {
   const p = new URLSearchParams(window.location.search);
   return {
-    desde: p.get(PARAMS.desde) || `${hoyUtc().slice(0, 8)}01`,
+    // La vista de red es operativa: abre en el día de hoy. El histórico (meses, comparativos, exportación) es Reportes de red.
+    desde: p.get(PARAMS.desde) || hoyUtc(),
     hasta: p.get(PARAMS.hasta) || hoyUtc(),
     tienda: p.get(PARAMS.tienda) || "",
     categoria: p.get(PARAMS.categoria) || "",
@@ -78,7 +79,8 @@ function AvisoFrescura({ datos }) {
   );
 }
 
-export default function VistaRed({ session }) {
+// irA (opcional): abre Reportes de red para el análisis histórico.
+export default function VistaRed({ session, irA }) {
   const token = session.token;
   const [filtros, setFiltros] = useState(filtrosDeUrl);
   const [opciones, setOpciones] = useState({ tiendas: [], categorias: [] });
@@ -131,7 +133,8 @@ export default function VistaRed({ session }) {
         <div>
           <h2>Vista de red</h2>
           <p className="muted">
-            Inventario, ventas e ingresos consolidados de las tiendas activas. Se actualiza solo cada {REFRESCO_MS / 1000} s
+            Cómo está la red ahora: qué tienda está al día, inventario y ventas consolidadas (por defecto, de hoy). Se actualiza
+            sola cada {REFRESCO_MS / 1000} s
             {actualizado && <> · consultado {actualizado.toLocaleTimeString()}</>}.
           </p>
         </div>
@@ -215,21 +218,7 @@ export default function VistaRed({ session }) {
             </div>
           </section>
 
-          <section className="rep-bloque">
-            <h3>Ingresos netos por tienda</h3>
-            <BarrasH
-              titulo="Ingresos netos por tienda"
-              datos={datos.tiendas.map((x) => ({
-                clave: x.id_tienda,
-                etiqueta: x.nombre,
-                valor: x.ventas.ingresos,
-                tono: x.frescura.estado === "DESACTUALIZADA" ? "bajo" : undefined,
-                texto: x.frescura.estado === "SIN_DATOS" ? "sin datos" : pesos(x.ventas.ingresos),
-                detalle: x.frescura.estado === "DESACTUALIZADA" ? `datos de ${fechaHora(x.frescura.ultima_actualizacion)}` : null,
-              }))}
-            />
-          </section>
-
+          {/* Los ingresos por tienda ya están en la tabla; las barras por tienda y por método de pago son de Reportes de red. */}
           <section className="rep-bloque">
             <h3>{conCategoria ? `Ventas de ${nombreCategoria ?? "la categoría"}` : "Ventas por categoría"}</h3>
             <BarrasH
@@ -239,28 +228,13 @@ export default function VistaRed({ session }) {
             />
           </section>
 
-          {!conCategoria && datos.metodos.length > 0 && (
-            <section className="rep-bloque">
-              <h3>Ingresos netos por método de pago</h3>
-              <div className="tabla-scroll">
-                <table className="tabla">
-                  <thead>
-                    <tr><th>Tienda</th>{datos.metodos.map((m) => <th key={m.id_metodo_pago} className="num">{m.metodo}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {datos.tiendas.filter((x) => x.ventas.metodos.length > 0).map((x) => (
-                      <tr key={x.id_tienda}>
-                        <td>{x.nombre}</td>
-                        {datos.metodos.map((m) => {
-                          const fila = x.ventas.metodos.find((y) => y.id_metodo_pago === m.id_metodo_pago);
-                          return <td key={m.id_metodo_pago} className="num">{fila ? pesos(fila.ingresos) : "—"}</td>;
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+          {irA && (
+            <div className="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-linea bg-suave px-4 py-3">
+              <p className="m-0 min-w-0 flex-1 text-[14px]">
+                ¿Necesita comparar meses entre tiendas, ver los ingresos por método de pago o exportar a Excel o PDF?
+              </p>
+              <button type="button" className="ghost" onClick={() => irA("REPORTE_CONSOLIDADO_VER")}>Ir a Reportes de red</button>
+            </div>
           )}
 
           <InventarioRed token={token} filtros={filtros} tiendas={datos.tiendas} />

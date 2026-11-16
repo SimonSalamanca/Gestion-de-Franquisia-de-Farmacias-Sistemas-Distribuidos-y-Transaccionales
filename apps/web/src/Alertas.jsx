@@ -37,7 +37,7 @@ function descripcion(a) {
   }
 }
 
-export default function Alertas({ session }) {
+export default function Alertas({ session, irA }) {
   const token = session.token;
   const [datos, setDatos] = useState(null);
   const [resumen, setResumen] = useState(null);
@@ -117,7 +117,7 @@ export default function Alertas({ session }) {
                 )}
               </div>
             </div>
-            {solicitando === a.id_alerta && <SolicitudDeAlerta token={token} idAlerta={a.id_alerta} />}
+            {solicitando === a.id_alerta && <SolicitudDeAlerta token={token} idAlerta={a.id_alerta} irA={irA} />}
           </li>
         ))}
       </ul>
