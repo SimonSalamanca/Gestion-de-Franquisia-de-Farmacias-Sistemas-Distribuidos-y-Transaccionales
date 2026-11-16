@@ -104,7 +104,7 @@ function ListaLotes({ token, version, onCambio }) {
         </select>
       </div>
       {error && <div className="error">{error}</div>}
-      {lotes && lotes.length === 0 && <div className="inv-vacio">No hay lotes con esos filtros.</div>}
+      {lotes && lotes.length === 0 && <div className="inv-vacio">No hay lotes con esos filtros. Cambie el estado o la fecha de vencimiento, o registre uno en «Registrar lote».</div>}
       <ul className="inv-lista">
         {(lotes || []).map((lote) => (
           <li key={lote.id_lote} className={`inv-item ${alertaCaducidad(lote)}`}>
@@ -418,7 +418,7 @@ function RecibirPedido({ token, onCambio, idPedido }) {
           )}
         </div>
       )}
-      {pedidos.length === 0 && <div className="inv-vacio">No hay pedidos pendientes de recibir.</div>}
+      {pedidos.length === 0 && <div className="inv-vacio">No hay pedidos pendientes de recibir. Aquí aparecen las solicitudes a proveedores (módulo Proveedores → Solicitudes) que aún esperan mercancía.</div>}
       {!elegido && (
         <ul className="inv-lista">
           {pedidos.map((p) => (

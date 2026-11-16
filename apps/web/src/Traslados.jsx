@@ -52,7 +52,7 @@ export default function Traslados({ session }) {
       <Solicitar token={token} onListo={cargar} />
       {error && <div className="error">{error}</div>}
       <h3>Traslados de esta tienda</h3>
-      {lista && lista.length === 0 && <div className="inv-vacio">Todavía no hay traslados.</div>}
+      {lista && lista.length === 0 && <div className="inv-vacio">Todavía no hay traslados. Para pedir unidades a otra tienda de la red, use «Solicitar un traslado» más abajo.</div>}
       <ul className="inv-lista">
         {(lista || []).map((t) => {
           const [clase, texto] = ESTADO_RED[t.estado_red] ?? ["media", t.estado_red ?? t.estado_local];

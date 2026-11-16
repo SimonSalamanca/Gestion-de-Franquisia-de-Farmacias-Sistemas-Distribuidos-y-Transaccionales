@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.js";
+import { avisar } from "./avisos.jsx";
 import { fechaCorta, fechaHora } from "./inventarioUi.jsx";
 import { SolicitudDeAlerta } from "./Solicitudes.jsx";
 
@@ -69,7 +70,10 @@ export default function Alertas({ session, irA }) {
 
   async function vista(id) {
     const r = await api(`/api/local/alertas/${id}/vista`, { method: "POST", token });
-    if (r.ok) setVersion((v) => v + 1);
+    if (r.ok) {
+      setVersion((v) => v + 1);
+      avisar("Alerta marcada como vista.");
+    }
   }
 
   return (

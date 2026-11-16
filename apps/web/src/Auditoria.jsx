@@ -94,7 +94,7 @@ export default function Auditoria({ session }) {
       {datos && (
         <>
           <p className="inv-resumen muted">{datos.total} registro(s) · página {datos.pagina} de {datos.paginas}</p>
-          {datos.registros.length === 0 && <div className="inv-vacio">No hay registros con esos filtros.</div>}
+          {datos.registros.length === 0 && <div className="inv-vacio">No hay registros con esos filtros. Pruebe con un rango de fechas más amplio o quite el filtro de usuario o de acción.</div>}
           {datos.registros.length > 0 && (
             <div className="tabla-scroll">
               <table className="tabla">

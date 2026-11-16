@@ -394,7 +394,7 @@ function Historial({ token }) {
   return (
     <div>
       {error && <div className="error">{error}</div>}
-      {cierres && cierres.length === 0 && <div className="inv-vacio">Todavía no hay cierres de caja.</div>}
+      {cierres && cierres.length === 0 && <div className="inv-vacio">Todavía no hay cierres de caja. El primero aparecerá aquí cuando cierre la caja en la pestaña «Cerrar caja».</div>}
       <ul className="inv-lista">
         {(cierres || []).map((k) => {
           const [clase, etiqueta] = ESTADO_CIERRE[k.estado];

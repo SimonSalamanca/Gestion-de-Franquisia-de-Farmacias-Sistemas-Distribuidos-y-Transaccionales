@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.js";
 import { Icono } from "./iconos.jsx";
+import { avisar } from "./avisos.jsx";
 
 // Demostración de conectividad (solo administradores, solo con FARMAHUB_SIMULACION): escenarios guiados para mostrar cómo
 // opera la tienda sin el nodo central y cómo se recupera la sincronización. API: apps/api/simulacion.mjs.
@@ -93,6 +94,8 @@ export default function Conectividad({ session }) {
     if (!r.ok) return setError(r.data.mensaje || "No se pudo completar la acción");
     setError("");
     setDatos(r.data);
+    const activa = r.data.conectividad?.simulacion_activa;
+    avisar(cuerpo.restablecer ? "Normalidad restablecida: la tienda vuelve a la conexión real." : `Escenario «${activa?.titulo ?? "de conectividad"}» iniciado.`);
   }
 
   const c = datos?.conectividad;

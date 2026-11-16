@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
+import { avisar } from "./avisos.jsx";
 import { fechaHora } from "./inventarioUi.jsx";
 import { ESTADOS, mensajeError, useEnvio } from "./abastecimientoUi.jsx";
 
@@ -69,7 +70,7 @@ export default function Solicitudes({ session, pedido, irA }) {
       </div>
       {nueva && <FormManual token={token} onListo={() => { setNueva(false); setVersion((v) => v + 1); }} />}
       {error && <div className="error">{error}</div>}
-      {datos && datos.solicitudes.length === 0 && <div className="inv-vacio">No hay solicitudes{filtro ? " con ese estado" : ""}.</div>}
+      {datos && datos.solicitudes.length === 0 && <div className="inv-vacio">{filtro ? "No hay solicitudes con ese estado." : "No hay solicitudes. Genere una desde una alerta de stock (Inventario → Alertas) o con «Nueva solicitud manual»."}</div>}
       <ul className="inv-lista">
         {(datos?.solicitudes || []).map((s) => (
           <Solicitud
@@ -145,6 +146,7 @@ function Solicitud({ s, token, onCambio, resaltada, onRecibir }) {
     const r = await enviar(`${BASE}/${s.id_pedido}/${nombre}`, "POST", body);
     if (!r.ok) return setError(mensajeError(r));
     setCancelando(false);
+    avisar(nombre === "enviar" ? `Solicitud ${s.id_pedido} marcada como enviada al proveedor.` : `Solicitud ${s.id_pedido} cancelada.`);
     onCambio();
   }
 

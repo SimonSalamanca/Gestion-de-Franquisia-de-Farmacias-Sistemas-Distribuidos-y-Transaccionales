@@ -79,7 +79,7 @@ export default function Precios({ session }) {
         <input placeholder="Buscar medicamento por nombre, principio activo o código" value={texto} onChange={(e) => setTexto(e.target.value)} aria-label="Buscar medicamento" />
       </div>
       {error && <div className="error">{error}</div>}
-      {lista && lista.length === 0 && <div className="inv-vacio">No hay medicamentos con ese texto.</div>}
+      {lista && lista.length === 0 && <div className="inv-vacio">No hay medicamentos con ese texto. Busque por nombre comercial, principio activo o código (por ejemplo, MED-001).</div>}
       <ul className="inv-lista">
         {(lista || []).map((med) => (
           <li key={med.id_medicamento} className="inv-item">

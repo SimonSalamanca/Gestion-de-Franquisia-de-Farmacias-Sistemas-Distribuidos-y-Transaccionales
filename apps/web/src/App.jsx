@@ -38,6 +38,7 @@ import ReportesRed from "./ReportesRed.jsx";
 import VistaRed from "./VistaRed.jsx";
 import Conectividad, { AvisoSimulacion } from "./Conectividad.jsx";
 import Pendientes from "./Pendientes.jsx";
+import { Avisos } from "./avisos.jsx";
 import Abastecimiento from "./Abastecimiento.jsx";
 import CierreCaja from "./CierreCaja.jsx";
 
@@ -113,6 +114,18 @@ function moduloInicial(session, visibles) {
   if (!esAdministrador(session) && tiene("VENTA_REGISTRAR")) return "VENTA_REGISTRAR";
   return null;
 }
+// Qué cambia en cada módulo del punto de venta sin conexión con el nodo central (según las rutas del API: lo que pasa por
+// enCentral responde 503). Lo que no está aquí funciona igual, solo con la base de la tienda.
+const SIN_CENTRAL = {
+  EMPLEADO_GESTIONAR: { nivel: "no", texto: "Empleados: no disponible (las cuentas se gestionan en el central)." },
+  PRECIO_GESTIONAR: { nivel: "parcial", texto: "Precios: se pueden consultar; cambiarlos necesita el central." },
+  PROVEEDOR_GESTIONAR: { nivel: "parcial", texto: "Proveedores: las solicitudes funcionan; registrar o editar proveedores necesita el central." },
+  INVENTARIO_CONSULTAR: { nivel: "parcial", texto: "Inventario: funciona; las existencias de otras tiendas no." },
+  VENTA_REGISTRAR: { nivel: "parcial", texto: "Ventas y recetas: se vende; validar una receta nueva necesita el central." },
+  INVENTARIO_GESTIONAR: { nivel: "parcial", texto: "Lotes y recepción: funciona; los traslados entre tiendas no." },
+  AUDITORIA_CONSULTAR: { nivel: "parcial", texto: "Auditoría: la de la tienda funciona; la del central no." },
+};
+
 const lugarDe = (session) => (session.nodo === "central" ? "Red · todas las tiendas" : session.tienda);
 
 const ESTADO_TEXTO = { online: "En línea", degradado: "Conexión lenta", offline: "Sin conexión" };
@@ -653,6 +666,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
 
   return (
     <div className="app-shell flex h-dvh overflow-hidden bg-fondo">
+      <Avisos />
       <a href="#contenido" className="sr-only z-50 rounded-lg bg-superficie px-4 py-2 focus:not-sr-only focus:fixed focus:left-3 focus:top-3">
         Saltar al contenido
       </a>
@@ -734,6 +748,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
                     texto={modulo.titulo}
                     activo={activo === modulo.codigo}
                     etiquetas={etiquetas}
+                    limitado={estado === "offline" ? (session.nodo === "central" ? "No disponible sin conexión" : SIN_CENTRAL[modulo.codigo]?.texto) : null}
                     onClick={() => abrirDesdeMenu(modulo.codigo)}
                   />
                 ))}
@@ -848,6 +863,8 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
             </dl>
           </section>
 
+          {estado === "offline" && <AvisoSinConexion session={session} visibles={visibles} />}
+
           {simulacionActiva && (
             <AvisoSimulacion
               simulacion={simulacionActiva}
@@ -908,14 +925,15 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
   );
 }
 
-function ElementoMenu({ icono, texto, activo, etiquetas, onClick }) {
+// limitado: texto de lo que no funciona sin conexión; se marca con un punto ámbar (con su texto para lectores de pantalla).
+function ElementoMenu({ icono, texto, activo, etiquetas, onClick, limitado }) {
   return (
     <li>
       <button
         type="button"
         onClick={onClick}
         aria-current={activo ? "page" : undefined}
-        title={etiquetas ? undefined : texto}
+        title={limitado || (etiquetas ? undefined : texto)}
         className={`relative flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[14px] transition-colors ${
           etiquetas ? "" : "justify-center"
         } ${activo ? "bg-primario-suave font-semibold text-primario-texto" : "text-tinta hover:bg-suave"}`}
@@ -923,8 +941,42 @@ function ElementoMenu({ icono, texto, activo, etiquetas, onClick }) {
         {activo && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-primario" aria-hidden="true" />}
         <Icono nombre={icono} tamano={19} className={activo ? "" : "text-tenue"} />
         {etiquetas ? <span className="truncate">{texto}</span> : <span className="sr-only">{texto}</span>}
+        {limitado && (
+          <>
+            <span className={`h-2 w-2 shrink-0 rounded-full bg-grafico-aviso ${etiquetas ? "ml-auto" : "absolute right-2 top-2"}`} aria-hidden="true" />
+            <span className="sr-only">. {limitado}</span>
+          </>
+        )}
       </button>
     </li>
+  );
+}
+
+// Sin conexión con el central: qué sigue funcionando y qué no, para los módulos de este usuario.
+function AvisoSinConexion({ session, visibles }) {
+  const consola = session.nodo === "central";
+  const limitados = consola ? [] : visibles.map((m) => SIN_CENTRAL[m.codigo]).filter(Boolean);
+  return (
+    <div className="mb-4 rounded-xl border border-error-borde border-l-[3px] border-l-error bg-error-fondo px-4 py-3 text-[14px] text-tinta" role="status">
+      <p className="m-0 font-semibold text-error">Sin conexión con el nodo central.</p>
+      {consola ? (
+        <p className="m-0 mt-1">La consola de red trabaja con los datos del central: hasta que vuelva la conexión no se pueden consultar ni modificar.</p>
+      ) : (
+        <>
+          <p className="m-0 mt-1">
+            La tienda sigue operando con su propia base: lo que registre se guarda y se envía solo al volver la conexión.
+            {limitados.length > 0 ? " Mientras tanto:" : ""}
+          </p>
+          {limitados.length > 0 && (
+            <ul className="m-0 mt-1.5 grid gap-0.5 pl-5">
+              {limitados.map((l) => (
+                <li key={l.texto}>{l.texto}</li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
