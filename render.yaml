@@ -1,0 +1,73 @@
+# Despliegue en Render (plan gratuito). Guía: docs/operacion/despliegue-render.md
+# Un servicio por tienda (nodo local). Cada uno entrega la web y el API en su mismo dominio y comparte el nodo central.
+# Los secretos (sync: false) se escriben en el panel de Render al crear el Blueprint: nunca van al repositorio.
+services:
+  - type: web
+    name: farmahub-centro
+    runtime: node
+    plan: free
+    region: virginia
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci && npm ci --prefix apps/web && npm run build --prefix apps/web
+    startCommand: node apps/api/server.mjs
+    healthCheckPath: /api/conectividad
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: LOCAL_TIENDA_ID
+        value: "1"
+      # Demostración pública: sin el endpoint de simulación (cualquiera podría forzar "sin conexión") ni datos sembrados.
+      - key: FARMAHUB_SIMULACION
+        value: "0"
+      - key: SEED_DEMO
+        value: "0"
+      # Nodo central (compartido por las dos tiendas): propietario (migraciones) y rol de aplicación.
+      - key: CENTRAL_DATABASE_URL_UNPOOLED
+        sync: false
+      - key: CENTRAL_DATABASE_URL_UNPOOLED_APP
+        sync: false
+      # Nodo local de la tienda 1.
+      - key: LOCAL_DATABASE_URL_UNPOOLED
+        sync: false
+      - key: LOCAL_DATABASE_URL_UNPOOLED_APP
+        sync: false
+      # Debe ser la MISMA en todos los nodos (docs/seguridad/datos-personales.md).
+      - key: DATOS_CLAVE
+        sync: false
+      # La URL pública de este servicio, p. ej. https://farmahub-centro.onrender.com
+      - key: CORS_ORIGIN
+        sync: false
+
+  - type: web
+    name: farmahub-norte
+    runtime: node
+    plan: free
+    region: virginia
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci && npm ci --prefix apps/web && npm run build --prefix apps/web
+    startCommand: node apps/api/server.mjs
+    healthCheckPath: /api/conectividad
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: LOCAL_TIENDA_ID
+        value: "2"
+      - key: FARMAHUB_SIMULACION
+        value: "0"
+      - key: SEED_DEMO
+        value: "0"
+      - key: CENTRAL_DATABASE_URL_UNPOOLED
+        sync: false
+      - key: CENTRAL_DATABASE_URL_UNPOOLED_APP
+        sync: false
+      # Nodo local de la tienda 2: aquí van los valores de las variables *_TIENDA2 del .env.
+      - key: LOCAL_DATABASE_URL_UNPOOLED
+        sync: false
+      - key: LOCAL_DATABASE_URL_UNPOOLED_APP
+        sync: false
+      - key: DATOS_CLAVE
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false

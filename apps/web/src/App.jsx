@@ -119,6 +119,8 @@ export default function App() {
   const [estado, setEstado] = useState("online");
   const [forzado, setForzado] = useState(null);
   const [ultimaSync, setUltimaSync] = useState(null);
+  // El API informa si la simulación de conectividad está habilitada (en el despliegue no): sin ella no se muestran los botones.
+  const [simulacion, setSimulacion] = useState(false);
 
   useEffect(() => {
     // Con `npm run dev` la web suele estar lista antes que el API (migra y sincroniza al arrancar):
@@ -141,6 +143,7 @@ export default function App() {
           setEstado(result.data.estado_real || result.data.estado);
           setForzado(result.data.forzado);
           setUltimaSync(result.data.ultima_sync);
+          setSimulacion(Boolean(result.data.simulacion));
         })
         .catch(() => {});
     }
@@ -169,6 +172,7 @@ export default function App() {
       <Login
         estado={estado}
         forzado={forzado}
+        simulacion={simulacion}
         ultimaSync={ultimaSync}
         onEstado={setEstado}
         onForzado={setForzado}
@@ -183,6 +187,7 @@ export default function App() {
       catalogo={catalogo}
       estado={estado}
       forzado={forzado}
+      simulacion={simulacion}
       ultimaSync={ultimaSync}
       onEstado={setEstado}
       onForzado={setForzado}
@@ -314,7 +319,7 @@ function PortadaLogin({ estado, ultimaSync, children, herramientas }) {
   );
 }
 
-function Login({ estado, forzado, ultimaSync, onEstado, onForzado, onEnter }) {
+function Login({ estado, forzado, simulacion, ultimaSync, onEstado, onForzado, onEnter }) {
   const [nodo, setNodo] = useState("local");
   const [usuario, setUsuario] = useState("cajero1");
   const [password, setPassword] = useState("Farma123");
@@ -375,7 +380,7 @@ function Login({ estado, forzado, ultimaSync, onEstado, onForzado, onEnter }) {
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 hover:bg-white/[0.04]">
         <span className="inline-flex items-center gap-2">
           <Icono nombre="ajustes" tamano={16} />
-          Cuentas de demostración y simulación
+          {simulacion ? "Cuentas de demostración y simulación" : "Cuentas de demostración"}
         </span>
         <Icono nombre="chevron" tamano={16} className="transition-transform group-open:rotate-90" />
       </summary>
@@ -403,12 +408,14 @@ function Login({ estado, forzado, ultimaSync, onEstado, onForzado, onEnter }) {
             ))}
           </div>
         </div>
-        <div>
-          <p className="m-0 mb-2 text-white/60">
-            Conectividad con el central{forzado ? ` · forzada: ${ESTADO_TEXTO[forzado] || forzado}` : ""}
-          </p>
-          <BotonesSimulacion forzado={forzado} simular={simular} oscuro />
-        </div>
+        {simulacion && (
+          <div>
+            <p className="m-0 mb-2 text-white/60">
+              Conectividad con el central{forzado ? ` · forzada: ${ESTADO_TEXTO[forzado] || forzado}` : ""}
+            </p>
+            <BotonesSimulacion forzado={forzado} simular={simular} oscuro />
+          </div>
+        )}
       </div>
     </details>
   );
@@ -501,7 +508,7 @@ function BotonesSimulacion({ forzado, simular, oscuro = false }) {
 
 const CLAVE_MENU = "farmahub:menu-contraido";
 
-function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onForzado, onSalir }) {
+function Shell({ session, catalogo, estado, forzado, simulacion, ultimaSync, onEstado, onForzado, onSalir }) {
   const visibles = useMemo(() => {
     return session.permisos
       .filter((codigo) => catalogo[codigo])
@@ -725,6 +732,7 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
             )}
             <span className={`pill ${estado} hidden sm:inline-flex`}>{ESTADO_TEXTO[estado] || estado}</span>
             {forzado && <span className={`pill ${forzado} hidden lg:inline-flex`}>Forzado: {ESTADO_TEXTO[forzado] || forzado}</span>}
+            {simulacion && (
             <details ref={panelSimulacion} className="menu-simulacion relative">
               <summary
                 className="grid h-9 w-9 cursor-pointer place-items-center rounded-lg border border-linea-fuerte bg-superficie text-tenue hover:text-tinta"
@@ -738,6 +746,7 @@ function Shell({ session, catalogo, estado, forzado, ultimaSync, onEstado, onFor
                 <BotonesSimulacion forzado={forzado} simular={simular} />
               </div>
             </details>
+            )}
           </div>
         </header>
 

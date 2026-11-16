@@ -9,7 +9,8 @@ export default function sistema(router) {
 
   router.get("/api/conectividad", async (req, res) => {
     const conflictos = await local.query("select count(*)::int as n from sync_conflicto where resuelto = false");
-    return send(res, 200, { ...conectividad(), conflictos: conflictos.rows[0].n });
+    // simulacion: la web muestra los botones de simulación solo si el endpoint está habilitado (no en el despliegue).
+    return send(res, 200, { ...conectividad(), conflictos: conflictos.rows[0].n, simulacion: config.simulacion });
   });
 
   // Herramienta de demo para simular caídas del central. Deshabilitada con FARMAHUB_SIMULACION=0.

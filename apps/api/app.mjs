@@ -19,6 +19,7 @@ import solicitudes from "./routes/solicitudes.mjs";
 import caja from "./routes/caja.mjs";
 import traslados from "./routes/traslados.mjs";
 import { ErrorNegocio } from "./errores.mjs";
+import { servirWeb } from "./web-estatica.mjs";
 
 // Cada módulo de rutas registra las suyas. Para una HU nueva: routes/<dominio>.mjs y agregarlo aquí.
 // Separado de server.mjs para que las pruebas HTTP levanten el mismo servidor sin el ciclo de sync.
@@ -48,7 +49,11 @@ export function crearServidor() {
     const url = new URL(req.url, "http://localhost");
     try {
       const ruta = router.buscar(req.method, url.pathname);
-      if (!ruta) return send(res, 404, { mensaje: "Ruta no encontrada" });
+      if (!ruta) {
+        // Despliegue: la web compilada se sirve desde este mismo proceso (web-estatica.mjs).
+        if (servirWeb(req, res, url.pathname)) return;
+        return send(res, 404, { mensaje: "Ruta no encontrada" });
+      }
       return await ruta.handler(req, res, { url, params: ruta.params });
     } catch (error) {
       if (error instanceof ErrorNegocio) return send(res, error.status, error.body);

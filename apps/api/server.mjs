@@ -60,9 +60,16 @@ setInterval(() => {
   ciclo().catch((error) => console.error("sync", error.message));
 }, config.syncIntervaloMs);
 
-process.on("SIGINT", async () => {
+// Ctrl+C en desarrollo (SIGINT) y apagado del hosting (SIGTERM: Render lo envía al redesplegar o al dormir el servicio).
+// Las transacciones en curso terminan o se revierten en la base; lo pendiente sigue en el outbox para el próximo arranque.
+let cerrando = false;
+async function apagar(senal) {
+  if (cerrando) return;
+  cerrando = true;
+  console.log(`${senal}: cerrando el API`);
   server.close();
-  await central.end();
-  await local.end();
+  await Promise.allSettled([central.end(), local.end()]);
   process.exit(0);
-});
+}
+process.on("SIGINT", () => apagar("SIGINT"));
+process.on("SIGTERM", () => apagar("SIGTERM"));

@@ -7,14 +7,18 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const PEPPER_DEV = "farmahub-dev-pepper";
 const DATOS_DEV = "farmahub-dev-datos-personales-no-usar-en-produccion";
 
-// Lee .env; las variables del proceso tienen prioridad sobre el archivo.
+// Lee .env; las variables del proceso tienen prioridad sobre el archivo. En el hosting (Render) no hay .env: las
+// variables llegan por el entorno. Si tampoco están ahí, urlDe avisa qué conexión falta.
 export function loadEnv() {
   const file = path.join(ROOT, ".env");
-  if (!fs.existsSync(file)) {
-    throw new Error("Falta el archivo .env en la raíz del proyecto. Cópielo de .env.example y complete las cadenas de Neon.");
-  }
   const env = {};
-  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+  const lineas = fs.existsSync(file) ? fs.readFileSync(file, "utf8").split(/\r?\n/) : [];
+  if (!lineas.length && !process.env.CENTRAL_DATABASE_URL && !process.env.CENTRAL_DATABASE_URL_UNPOOLED) {
+    throw new Error(
+      "Falta la configuración: cree el archivo .env en la raíz del proyecto (cópielo de .env.example y complete las cadenas de Neon) o defina las variables de entorno.",
+    );
+  }
+  for (const line of lineas) {
     if (!line || line.startsWith("#") || !line.includes("=")) continue;
     const index = line.indexOf("=");
     env[line.slice(0, index).trim()] = line.slice(index + 1).trim().replace(/^"|"$/g, "");
