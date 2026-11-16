@@ -721,7 +721,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
           )}
           <button
             type="button"
-            className="grid h-9 w-9 place-items-center rounded-lg text-tenue hover:bg-suave hover:text-tinta md:hidden"
+            className="grid h-9 w-9 place-items-center rounded-lg text-tenue hover:bg-suave hover:text-tinta pointer-coarse:h-11 pointer-coarse:w-11 md:hidden"
             onClick={() => setMenuMovil(false)}
             aria-label="Cerrar menú"
           >
@@ -776,7 +776,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
               type="button"
               onClick={onSalir}
               title="Salir"
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-tenue hover:bg-error-fondo hover:text-error"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-tenue hover:bg-error-fondo hover:text-error pointer-coarse:h-11 pointer-coarse:w-11"
             >
               <Icono nombre="salir" tamano={18} />
               <span className="sr-only">Salir</span>
@@ -789,7 +789,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
         <header className="app-barra sticky top-0 z-20 flex min-h-[68px] shrink-0 items-center gap-3 border-b border-linea bg-fondo/90 px-4 backdrop-blur sm:px-6 lg:px-8">
           <button
             type="button"
-            className="grid h-10 w-10 place-items-center rounded-lg border border-linea-fuerte bg-superficie md:hidden"
+            className="grid h-10 w-10 place-items-center rounded-lg border border-linea-fuerte bg-superficie pointer-coarse:h-11 pointer-coarse:w-11 md:hidden"
             onClick={() => setMenuMovil(true)}
             aria-label="Abrir menú"
             aria-expanded={menuMovil}
@@ -807,7 +807,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
                 type="button"
                 onClick={abrirAlertas}
                 aria-label={`Ver alertas de stock y caducidad: ${textoAlertas}`}
-                className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium ${
+                className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium pointer-coarse:min-h-11 ${
                   urgentes > 0 ? "border-error-borde bg-error-fondo text-error" : "border-linea-fuerte bg-superficie text-tinta"
                 }`}
               >
@@ -848,7 +848,7 @@ function Shell({ session, catalogo, estado, forzado, simulacion, simulacionActiv
               {verAlertas ? (
                 <Dato titulo="Alertas">
                   {alertas && alertas.total > 0 ? (
-                    <button type="button" onClick={abrirAlertas} className={`pill ${urgentes > 0 ? "offline" : "media"} border-0`}>
+                    <button type="button" onClick={abrirAlertas} className={`pill ${urgentes > 0 ? "offline" : "media"} relative border-0 after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-[""]`}>
                       {textoAlertas}
                     </button>
                   ) : (
