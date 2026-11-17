@@ -15,6 +15,10 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "24"
+      # Render pone NODE_ENV=production por defecto: ese modo exige un AUTH_PEPPER propio y las contraseñas actuales se
+      # calcularon con el de desarrollo (nadie podría entrar). La simulación y la siembra quedan apagadas abajo, explícitas.
+      - key: NODE_ENV
+        value: development
       - key: LOCAL_TIENDA_ID
         value: "1"
       # Demostración pública: sin el endpoint de simulación (cualquiera podría forzar "sin conexión") ni datos sembrados.
@@ -52,6 +56,10 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "24"
+      # Render pone NODE_ENV=production por defecto: ese modo exige un AUTH_PEPPER propio y las contraseñas actuales se
+      # calcularon con el de desarrollo (nadie podría entrar). La simulación y la siembra quedan apagadas abajo, explícitas.
+      - key: NODE_ENV
+        value: development
       - key: LOCAL_TIENDA_ID
         value: "2"
       - key: FARMAHUB_SIMULACION

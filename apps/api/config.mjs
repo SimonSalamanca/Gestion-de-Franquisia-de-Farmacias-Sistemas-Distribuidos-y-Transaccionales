@@ -44,14 +44,35 @@ function entero(env, key, fallback) {
 
 // Rol de aplicación (datos sin DDL, docs/seguridad/datos-personales.md, fase 5). Si no está configurado, la aplicación usa la
 // misma conexión que las migraciones (compatibilidad con bases ya existentes).
+// Lee una cadena de conexión: quita espacios y comillas que suelen colarse al pegarla en un panel (Render) y comprueba
+// que sea una URL postgres(ql)://… con host. Si no, dice qué variable está mal sin mostrar su valor (lleva la contraseña).
+// Sin esta revisión, pg toma un valor inválido como relativo y falla con "getaddrinfo ENOTFOUND base".
+function urlValida(env, clave) {
+  const cruda = env[clave];
+  if (cruda === undefined || cruda === "") return null;
+  const url = String(cruda).trim().replace(/^["']+|["']+$/g, "").trim();
+  let host = "";
+  try {
+    const u = new URL(url);
+    if (u.protocol === "postgres:" || u.protocol === "postgresql:") host = u.hostname;
+  } catch {
+    /* no es una URL */
+  }
+  if (!host) {
+    const pista = url.includes("=") && !url.startsWith("postgres") ? " (¿se pegó también el nombre de la variable?)" : "";
+    throw new Error(`${clave} no es una cadena de conexión válida: debe empezar con postgresql://usuario:clave@host/base${pista}.`);
+  }
+  return url;
+}
+
 function urlAppDe(env, nodo, respaldo) {
-  return env[`${nodo}_DATABASE_URL_UNPOOLED_APP`] || env[`${nodo}_DATABASE_URL_APP`] || respaldo;
+  return urlValida(env, `${nodo}_DATABASE_URL_UNPOOLED_APP`) || urlValida(env, `${nodo}_DATABASE_URL_APP`) || respaldo;
 }
 
 function urlDe(env, nodo) {
-  const url = env[`${nodo}_DATABASE_URL_UNPOOLED`] || env[`${nodo}_DATABASE_URL`];
+  const url = urlValida(env, `${nodo}_DATABASE_URL_UNPOOLED`) || urlValida(env, `${nodo}_DATABASE_URL`);
   if (!url || url.includes("USER:PASSWORD")) {
-    throw new Error(`Falta ${nodo}_DATABASE_URL en .env (o aún tiene el valor de ejemplo).`);
+    throw new Error(`Falta ${nodo}_DATABASE_URL en .env o en las variables de entorno (o aún tiene el valor de ejemplo).`);
   }
   return url;
 }

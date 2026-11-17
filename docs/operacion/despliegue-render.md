@@ -47,9 +47,11 @@ Cada `git push` a `main` vuelve a desplegar los dos servicios (`autoDeploy`).
 - `FARMAHUB_SIMULACION=0`: sin la demostración de conectividad (docs/operacion/demostracion-conectividad.md). El panel no
   aparece y su API responde 404.
 - `SEED_DEMO=0`: el despliegue no siembra datos de demostración.
-- No se define `NODE_ENV=production`: ese modo exige un `AUTH_PEPPER` propio, y las contraseñas actuales se calcularon con el
-  pepper de desarrollo, así que ninguna cuenta podría entrar. Para pasar a producción hay que definir `AUTH_PEPPER` y regenerar
-  las contraseñas con códigos de restablecimiento (HU-07).
+- `NODE_ENV=development`: Render pone `production` por defecto, y ese modo exige un `AUTH_PEPPER` propio. Las
+  contraseñas actuales se calcularon con el pepper de desarrollo, así que con otro ninguna cuenta podría entrar (el
+  servicio no arranca: "AUTH_PEPPER es obligatorio en producción"). La simulación y la siembra ya quedan apagadas por
+  `FARMAHUB_SIMULACION=0` y `SEED_DEMO=0`. Para pasar a producción hay que definir `AUTH_PEPPER` y regenerar las
+  contraseñas con códigos de restablecimiento (HU-07).
 
 ## Lo que cambió en el código para desplegar
 
@@ -64,3 +66,11 @@ Cada `git push` a `main` vuelve a desplegar los dos servicios (`autoDeploy`).
 Se probó la rama en un clon limpio, sin `.env`, con los mismos comandos de `render.yaml` y contra un clon Docker de las bases:
 compilación, arranque, entrega de la web, rutas fuera de `dist` bloqueadas, simulación deshabilitada, inicio de sesión y módulos
 en Chrome y Edge (escritorio y celular), y las suites de interfaz sobre la web compilada.
+
+## Errores frecuentes
+
+- **`getaddrinfo ENOTFOUND base`** (o "… no es una cadena de conexión válida"): una URL de base de datos se pegó mal. Pegue
+  solo el valor, empezando por `postgresql://`, sin el nombre de la variable delante. Las comillas y los espacios al
+  inicio o al final se quitan solos.
+- **`AUTH_PEPPER es obligatorio en producción`**: falta `NODE_ENV=development` (ver arriba).
+- **La vista de red muestra una tienda "Desactualizada"**: ese servicio está dormido; se pone al día unos 2 minutos después de abrirlo.
