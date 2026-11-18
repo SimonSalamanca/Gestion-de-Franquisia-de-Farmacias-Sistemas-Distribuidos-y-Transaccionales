@@ -323,6 +323,7 @@ CREATE TABLE tienda (
     activa boolean DEFAULT true NOT NULL,
     fecha_registro timestamp without time zone DEFAULT now() NOT NULL,
     version_tienda bigint DEFAULT 1 NOT NULL,
+    id_politica integer DEFAULT 1 NOT NULL,
     CONSTRAINT tienda_pkey PRIMARY KEY (id_tienda)
 );
 
@@ -394,6 +395,14 @@ ALTER TABLE receta_emitida ADD CONSTRAINT receta_emitida_documento_cifrado_check
 -- 5. LLAVES FORÁNEAS
 -- ============================================================================
 
+-- Relaciones de 17_relaciones.sql: cada tabla técnica unida a la entidad dueña de su dato.
+ALTER TABLE tienda ADD CONSTRAINT tienda_id_politica_fkey FOREIGN KEY (id_politica) REFERENCES politica_sistema(id);
+ALTER TABLE intento_acceso ADD CONSTRAINT intento_acceso_id_empleado_fkey FOREIGN KEY (id_empleado) REFERENCES empleado(id_empleado);
+ALTER TABLE registro_actividad_central ADD CONSTRAINT registro_actividad_central_id_empleado_fkey FOREIGN KEY (id_empleado) REFERENCES empleado(id_empleado);
+ALTER TABLE registro_actividad_central ADD CONSTRAINT registro_actividad_central_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES tienda(id_tienda);
+ALTER TABLE inbox_sync ADD CONSTRAINT inbox_sync_id_tienda_origen_fkey FOREIGN KEY (id_tienda_origen) REFERENCES tienda(id_tienda);
+ALTER TABLE receta_conflicto ADD CONSTRAINT receta_conflicto_id_tienda_origen_fkey FOREIGN KEY (id_tienda_origen) REFERENCES tienda(id_tienda);
+ALTER TABLE replica_evento ADD CONSTRAINT replica_evento_id_tienda_destino_fkey FOREIGN KEY (id_tienda_destino) REFERENCES tienda(id_tienda);
 ALTER TABLE codigo_restablecimiento ADD CONSTRAINT codigo_restablecimiento_generado_por_fkey FOREIGN KEY (generado_por) REFERENCES empleado(id_empleado);
 ALTER TABLE codigo_restablecimiento ADD CONSTRAINT codigo_restablecimiento_id_empleado_fkey FOREIGN KEY (id_empleado) REFERENCES empleado(id_empleado);
 ALTER TABLE control_acceso ADD CONSTRAINT control_acceso_id_empleado_fkey FOREIGN KEY (id_empleado) REFERENCES empleado(id_empleado);
@@ -461,19 +470,6 @@ BEGIN
     INSERT INTO replica_evento (id_evento, id_tienda_destino, tipo_evento, version_credencial, payload)
     VALUES (v_id, p_destino, p_tipo, p_version, p_payload);
     RETURN v_id;
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION auditoria_central_empleado()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-    IF NEW.id_tienda IS NULL AND NEW.id_empleado IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM empleado WHERE id_empleado = NEW.id_empleado) THEN
-        RAISE EXCEPTION 'El empleado % no existe (auditoría del central)', NEW.id_empleado USING ERRCODE = '23503';
-    END IF;
-    RETURN NEW;
 END;
 $function$;
 
@@ -804,7 +800,6 @@ $function$;
 
 CREATE CONSTRAINT TRIGGER medicamento_con_umbral AFTER INSERT OR UPDATE OF activo ON medicamento DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION exigir_umbral_medicamento();
 CREATE TRIGGER precio_medicamento_historial BEFORE DELETE OR UPDATE ON precio_medicamento FOR EACH ROW EXECUTE FUNCTION precio_historial_inmutable();
-CREATE TRIGGER registro_actividad_central_empleado BEFORE INSERT ON registro_actividad_central FOR EACH ROW EXECUTE FUNCTION auditoria_central_empleado();
 CREATE TRIGGER registro_actividad_central_inmutable BEFORE DELETE OR UPDATE ON registro_actividad_central FOR EACH ROW EXECUTE FUNCTION auditoria_inmutable();
 CREATE TRIGGER registro_actividad_central_sin_truncate BEFORE TRUNCATE ON registro_actividad_central FOR EACH STATEMENT EXECUTE FUNCTION auditoria_inmutable();
 CREATE CONSTRAINT TRIGGER tienda_con_umbrales AFTER INSERT OR UPDATE OF activa ON tienda DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION exigir_umbral_tienda();

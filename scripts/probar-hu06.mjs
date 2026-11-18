@@ -1,5 +1,5 @@
 import "./lib/owner.mjs";
-import { ajustarControlAcceso, crearEmpleadoPrueba, desactivarEmpleado, fijarEstadoAcceso, fijarPoliticaAcceso, fijarVersionCredencial } from "./lib/central.mjs";
+import { ajustarControlAcceso, asegurarTiendaInactivaPrueba, crearEmpleadoPrueba, desactivarEmpleado, fijarEstadoAcceso, fijarPoliticaAcceso, fijarVersionCredencial } from "./lib/central.mjs";
 import crypto from "crypto";
 import { central, local } from "../apps/api/db.mjs";
 import { migrate } from "../apps/api/migrate.mjs";
@@ -183,14 +183,18 @@ await central.query("select fold_evento(1, $1, 'FAIL', $2::jsonb)", [
 const viejo = await central.query("select intentos_en_epoch from control_acceso where id_empleado = $1", [id]);
 check("fallo viejo no suma", Number(viejo.rows[0].intentos_en_epoch) === 0, String(viejo.rows[0].intentos_en_epoch));
 
+// Un evento dirigido a OTRA tienda real (replica_evento exige que la tienda destino exista): una tienda inactiva de prueba.
+// El tipo CURSOR_OMITIR no tiene manejador: si esta tienda lo aplicara, quedaría un conflicto EVENTO_DESCONOCIDO.
+const idTiendaAjena = await asegurarTiendaInactivaPrueba("Tienda ajena (prueba HU-06)");
 const insertado = await central.query(
-  "select append_replica_evento(99, 'CURSOR_OMITIR', 1, '{\"id_tienda\":99}'::jsonb) as id",
+  "select append_replica_evento($1, 'CURSOR_OMITIR', 1, jsonb_build_object('id_tienda', $1::int)) as id",
+  [idTiendaAjena],
 );
 const idAjeno = Number(insertado.rows[0].id);
 await pullReplica(1);
 const cursorDespues = await local.query("select ultimo_evento_visto from cursor_sync where id_tienda = 1");
-const otraTienda = await local.query("select 1 from tienda_ref where id_tienda = 99");
-check("evento de otra tienda no se aplica", otraTienda.rowCount === 0);
+const aplicado = await local.query("select 1 from sync_conflicto where tipo = 'EVENTO_DESCONOCIDO' and detalle like $1", [`evento ${idAjeno} %`]);
+check("evento de otra tienda no se aplica", aplicado.rowCount === 0);
 check(
   "evento de otra tienda no atasca el cursor",
   Number(cursorDespues.rows[0].ultimo_evento_visto) >= idAjeno,

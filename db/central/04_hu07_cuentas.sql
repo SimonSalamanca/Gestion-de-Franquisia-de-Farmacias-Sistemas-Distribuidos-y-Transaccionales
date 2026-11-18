@@ -46,27 +46,9 @@ BEGIN
     END IF;
 END $$;
 
--- Las filas de las tiendas no llevan FK a empleado ni a tienda: son historia y deben sobrevivir a cambios del catálogo
--- (y un rechazo bloquearía la subida de la auditoría). Las del central sí exigen un empleado existente, como hacía su FK:
--- la regla pasa a un disparador que solo mira las filas del central.
-ALTER TABLE registro_actividad_central
-    DROP CONSTRAINT IF EXISTS registro_actividad_central_id_empleado_fkey;
-
-CREATE OR REPLACE FUNCTION auditoria_central_empleado() RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    IF NEW.id_tienda IS NULL AND NEW.id_empleado IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM empleado WHERE id_empleado = NEW.id_empleado) THEN
-        RAISE EXCEPTION 'El empleado % no existe (auditoría del central)', NEW.id_empleado USING ERRCODE = '23503';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-CREATE OR REPLACE TRIGGER registro_actividad_central_empleado
-    BEFORE INSERT ON registro_actividad_central
-    FOR EACH ROW EXECUTE FUNCTION auditoria_central_empleado();
+-- El empleado y la tienda de cada registro (también los que suben las tiendas) se exigen con llaves foráneas en
+-- 17_relaciones.sql. Antes este script quitaba la FK a empleado en cada arranque y la reemplazaba por un disparador que
+-- solo miraba las filas del central; como los empleados nunca se borran (baja lógica), la FK no rechaza filas legítimas.
 
 CREATE INDEX IF NOT EXISTS idx_registro_actividad_central_fecha ON registro_actividad_central (fecha_hora);
 

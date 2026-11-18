@@ -460,7 +460,8 @@ CREATE TABLE recepcion (
     fecha_hora timestamp without time zone DEFAULT now() NOT NULL,
     documento_proveedor character varying(60),
     observaciones character varying(300),
-    CONSTRAINT recepcion_pkey PRIMARY KEY (id_recepcion)
+    CONSTRAINT recepcion_pkey PRIMARY KEY (id_recepcion),
+    CONSTRAINT recepcion_id_recepcion_id_pedido_key UNIQUE (id_recepcion, id_pedido)
 );
 
 CREATE TABLE receta (
@@ -546,6 +547,7 @@ CREATE TABLE tienda_ref (
     nombre character varying(120) NOT NULL,
     activa boolean DEFAULT true NOT NULL,
     es_tienda_local boolean DEFAULT false NOT NULL,
+    id_politica integer DEFAULT 1 NOT NULL,
     CONSTRAINT tienda_ref_pkey PRIMARY KEY (id_tienda)
 );
 
@@ -621,10 +623,17 @@ ALTER TABLE detalle_traslado_local ADD CONSTRAINT detalle_traslado_local_id_lote
 ALTER TABLE detalle_traslado_local ADD CONSTRAINT detalle_traslado_local_id_medicamento_fkey FOREIGN KEY (id_medicamento) REFERENCES medicamento_ref(id_medicamento);
 ALTER TABLE detalle_traslado_local ADD CONSTRAINT detalle_traslado_local_id_traslado_rol_tienda_fkey FOREIGN KEY (id_traslado, rol_tienda) REFERENCES traslado_local(id_traslado, rol_tienda) ON DELETE CASCADE;
 ALTER TABLE devolucion_pago ADD CONSTRAINT devolucion_pago_id_anulacion_fkey FOREIGN KEY (id_anulacion) REFERENCES anulacion_devolucion(id_anulacion);
+ALTER TABLE devolucion_pago ADD CONSTRAINT devolucion_pago_id_metodo_pago_fkey FOREIGN KEY (id_metodo_pago) REFERENCES metodo_pago_ref(id_metodo_pago);
 ALTER TABLE diferencia_recepcion ADD CONSTRAINT diferencia_recepcion_id_empleado_fkey FOREIGN KEY (id_empleado) REFERENCES empleado_ref(id_empleado);
-ALTER TABLE diferencia_recepcion ADD CONSTRAINT diferencia_recepcion_id_medicamento_fkey FOREIGN KEY (id_medicamento) REFERENCES medicamento_ref(id_medicamento);
-ALTER TABLE diferencia_recepcion ADD CONSTRAINT diferencia_recepcion_id_pedido_fkey FOREIGN KEY (id_pedido) REFERENCES pedido(id_pedido);
-ALTER TABLE diferencia_recepcion ADD CONSTRAINT diferencia_recepcion_id_recepcion_fkey FOREIGN KEY (id_recepcion) REFERENCES recepcion(id_recepcion);
+-- La diferencia es de una línea del pedido y se registró en una recepción de ese mismo pedido (17_relaciones.sql).
+ALTER TABLE diferencia_recepcion ADD CONSTRAINT diferencia_recepcion_linea_pedido_fkey FOREIGN KEY (id_pedido, id_medicamento) REFERENCES detalle_pedido(id_pedido, id_medicamento);
+ALTER TABLE diferencia_recepcion ADD CONSTRAINT diferencia_recepcion_recepcion_pedido_fkey FOREIGN KEY (id_recepcion, id_pedido) REFERENCES recepcion(id_recepcion, id_pedido);
+-- Relaciones de 17_relaciones.sql: cada tabla técnica unida a la entidad dueña de su dato.
+ALTER TABLE tienda_ref ADD CONSTRAINT tienda_ref_id_politica_fkey FOREIGN KEY (id_politica) REFERENCES politica_sistema(id);
+ALTER TABLE intento_acceso ADD CONSTRAINT intento_acceso_id_empleado_fkey FOREIGN KEY (id_empleado) REFERENCES empleado_ref(id_empleado);
+ALTER TABLE outbox_sync ADD CONSTRAINT outbox_sync_id_empleado_fkey FOREIGN KEY (id_empleado) REFERENCES empleado_ref(id_empleado);
+ALTER TABLE sync_conflicto ADD CONSTRAINT sync_conflicto_id_empleado_fkey FOREIGN KEY (id_empleado) REFERENCES empleado_ref(id_empleado);
+ALTER TABLE pedido ADD CONSTRAINT pedido_id_alerta_fkey FOREIGN KEY (id_alerta) REFERENCES alerta(id_alerta);
 ALTER TABLE empleado_ref ADD CONSTRAINT empleado_ref_id_rol_fkey FOREIGN KEY (id_rol) REFERENCES rol_ref(id_rol);
 ALTER TABLE factura ADD CONSTRAINT factura_id_cliente_fkey FOREIGN KEY (id_cliente) REFERENCES cliente(id_cliente);
 ALTER TABLE factura ADD CONSTRAINT factura_id_empleado_fkey FOREIGN KEY (id_empleado) REFERENCES empleado_ref(id_empleado);
