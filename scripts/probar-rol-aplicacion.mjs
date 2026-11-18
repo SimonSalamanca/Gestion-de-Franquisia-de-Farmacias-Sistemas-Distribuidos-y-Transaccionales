@@ -2,7 +2,7 @@
 // API de la tienda 1 levantado en el puerto 4000 (que ya usa el rol farmahub_datos) y la conexión del rol en .env.
 // Recorre operaciones de lectura y de escritura por HTTP y comprueba que el rol no puede tocar la auditoría ni el esquema.
 import pg from "pg";
-import fs from "node:fs";
+import { loadEnv } from "../apps/api/config.mjs";
 
 const BASE = process.env.FARMAHUB_API_PRUEBA || "http://localhost:4000";
 const fallos = [];
@@ -11,12 +11,8 @@ function check(nombre, ok, detalle = "") {
   console.log(ok ? "OK" : "FALLO", nombre, detalle);
 }
 const J = (r) => r.json().catch(() => ({}));
-const env = Object.fromEntries(
-  fs.readFileSync(".env", "utf8").split(/\r?\n/).filter((l) => /^[A-Z_0-9]+=/.test(l)).map((l) => {
-    const i = l.indexOf("=");
-    return [l.slice(0, i), l.slice(i + 1).replace(/^"|"$/g, "")];
-  }),
-);
+// Mismo archivo de conexión que el API (.env, o FARMAHUB_ENV_FILE con su candado de rama).
+const env = loadEnv();
 
 async function login(usuario) {
   const r = await fetch(`${BASE}/api/local/auth/login`, {
@@ -71,7 +67,7 @@ if (med) {
 }
 
 // Auditoría: el rol de datos puede escribir auditoría pero no alterarla ni borrarla.
-const ruta = (fs.existsSync(".env") && env.LOCAL_DATABASE_URL_UNPOOLED_APP) || null;
+const ruta = env.LOCAL_DATABASE_URL_UNPOOLED_APP || null;
 if (ruta) {
   const c = new pg.Client({ connectionString: ruta, ssl: { rejectUnauthorized: false } });
   await c.connect();

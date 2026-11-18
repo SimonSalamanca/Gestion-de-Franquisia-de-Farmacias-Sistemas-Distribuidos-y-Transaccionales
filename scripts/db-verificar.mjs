@@ -13,30 +13,48 @@ const estricto = process.argv.includes("--estricto");
 // Objetos que el código crea fuera de los .sql (ver migrate.mjs: asegurarUsuarioUnico).
 const CREADOS_EN_CODIGO = { central: [], local: ["empleado_ref_usuario_key"] };
 
+// Lee los scripts en orden y, dentro de cada uno, aplica sus sentencias en el orden en que aparecen: así un script
+// posterior puede eliminar tablas, columnas, vistas o funciones (o eliminarlas y volver a crearlas).
 function esperado(nodo) {
   const cols = {};
   const nombres = new Set();
   const vistas = new Set();
   const funciones = new Set();
+  const tablaDe = {}; // restricción/índice -> tabla, para olvidarlos cuando se elimina la tabla
   for (const script of scriptsDe(nodo)) {
     const sql = fs.readFileSync(script.ruta, "utf8").replace(/\r/g, "").replace(/--.*$/gm, "");
-    // Lo que un script posterior elimina deja de esperarse (antes de leer lo que ese mismo script vuelva a crear).
-    for (const m of sql.matchAll(/DROP (?:CONSTRAINT|INDEX) (?:IF EXISTS )?(\w+)/gi)) nombres.delete(m[1]);
     for (const m of sql.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?(\w+)\s*\(([\s\S]*?)\n\);/gi)) {
+      for (const c of m[2].matchAll(/\bCONSTRAINT (\w+)/gi)) tablaDe[c[1]] = m[1];
+    }
+    for (const m of sql.matchAll(/ALTER TABLE (\w+)\s+ADD (?:COLUMN [^;]*?)?CONSTRAINT (\w+)/gi)) tablaDe[m[2]] = m[1];
+    for (const m of sql.matchAll(/CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?(\w+)\s+ON (\w+)/gi)) tablaDe[m[1]] = m[2];
+
+    const pasos = [];
+    const en = (re, fn) => {
+      for (const m of sql.matchAll(re)) pasos.push({ i: m.index, fn: () => fn(m) });
+    };
+    en(/DROP (?:CONSTRAINT|INDEX) (?:IF EXISTS )?(\w+)/gi, (m) => nombres.delete(m[1]));
+    en(/CREATE TABLE (?:IF NOT EXISTS )?(\w+)\s*\(([\s\S]*?)\n\);/gi, (m) => {
       cols[m[1]] ??= new Set();
       for (const linea of m[2].split(/,\n/)) {
         const c = linea.trim().match(/^(\w+)\s+/);
         if (c && !/^(CONSTRAINT|PRIMARY|UNIQUE|FOREIGN|CHECK)$/i.test(c[1])) cols[m[1]].add(c[1]);
       }
-    }
-    for (const m of sql.matchAll(/ALTER TABLE (\w+)\s+ADD COLUMN (?:IF NOT EXISTS )?(\w+)/gi)) {
-      (cols[m[1]] ??= new Set()).add(m[2]);
-    }
+    });
+    en(/ALTER TABLE (\w+)\s+ADD COLUMN (?:IF NOT EXISTS )?(\w+)/gi, (m) => (cols[m[1]] ??= new Set()).add(m[2]));
+    en(/ALTER TABLE (\w+)\s+DROP COLUMN (?:IF EXISTS )?(\w+)/gi, (m) => cols[m[1]]?.delete(m[2]));
+    en(/DROP TABLE (?:IF EXISTS )?(\w+)/gi, (m) => {
+      delete cols[m[1]];
+      for (const [nombre, tabla] of Object.entries(tablaDe)) if (tabla === m[1]) nombres.delete(nombre);
+    });
     // \b evita leer "pg_constraint WHERE ..." (consultas de catálogo en bloques DO) como una restricción.
-    for (const m of sql.matchAll(/(?:ADD )?\bCONSTRAINT (?!TRIGGER\b|IF\b)(\w+)/gi)) nombres.add(m[1]);
-    for (const m of sql.matchAll(/CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?(\w+)/gi)) nombres.add(m[1]);
-    for (const m of sql.matchAll(/CREATE (?:OR REPLACE )?VIEW (\w+)/gi)) vistas.add(m[1]);
-    for (const m of sql.matchAll(/CREATE (?:OR REPLACE )?FUNCTION (\w+)/gi)) funciones.add(m[1]);
+    en(/(?:ADD )?\bCONSTRAINT (?!TRIGGER\b|IF\b)(\w+)/gi, (m) => nombres.add(m[1]));
+    en(/CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?(\w+)/gi, (m) => nombres.add(m[1]));
+    en(/CREATE (?:OR REPLACE )?VIEW (\w+)/gi, (m) => vistas.add(m[1]));
+    en(/DROP VIEW (?:IF EXISTS )?(\w+)/gi, (m) => vistas.delete(m[1]));
+    en(/CREATE (?:OR REPLACE )?FUNCTION (\w+)/gi, (m) => funciones.add(m[1]));
+    en(/DROP FUNCTION (?:IF EXISTS )?(\w+)/gi, (m) => funciones.delete(m[1]));
+    for (const paso of pasos.sort((a, b) => a.i - b.i)) paso.fn();
   }
   for (const nombre of CREADOS_EN_CODIGO[nodo]) nombres.add(nombre);
   return { cols, nombres, vistas, funciones };

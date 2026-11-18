@@ -7,25 +7,55 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const PEPPER_DEV = "farmahub-dev-pepper";
 const DATOS_DEV = "farmahub-dev-datos-personales-no-usar-en-produccion";
 
-// Lee .env; las variables del proceso tienen prioridad sobre el archivo. En el hosting (Render) no hay .env: las
-// variables llegan por el entorno. Si tampoco están ahí, urlDe avisa qué conexión falta.
-export function loadEnv() {
-  const file = path.join(ROOT, ".env");
+function leerArchivoEnv(file) {
   const env = {};
   const lineas = fs.existsSync(file) ? fs.readFileSync(file, "utf8").split(/\r?\n/) : [];
-  if (!lineas.length && !process.env.CENTRAL_DATABASE_URL && !process.env.CENTRAL_DATABASE_URL_UNPOOLED) {
-    throw new Error(
-      "Falta la configuración: cree el archivo .env en la raíz del proyecto (cópielo de .env.example y complete las cadenas de Neon) o defina las variables de entorno.",
-    );
-  }
   for (const line of lineas) {
     if (!line || line.startsWith("#") || !line.includes("=")) continue;
     const index = line.indexOf("=");
     env[line.slice(0, index).trim()] = line.slice(index + 1).trim().replace(/^"|"$/g, "");
   }
+  return env;
+}
+
+// Endpoints de Neon (ep-xxxx, sin "-pooler") de todas las cadenas de conexión de un entorno.
+function endpointsDe(env) {
+  const eps = new Set();
+  for (const [clave, valor] of Object.entries(env)) {
+    if (!/DATABASE_URL/.test(clave) || !valor) continue;
+    for (const m of String(valor).matchAll(/@(ep-[a-z0-9-]+?)(?:-pooler)?\./g)) eps.add(m[1]);
+  }
+  return eps;
+}
+
+// Candado de ramas de prueba: con FARMAHUB_ENV_FILE (p. ej. .env.rama.local) el proceso se niega a arrancar si alguna de
+// sus conexiones apunta a un endpoint del .env principal (las bases que usa la aplicación hoy).
+function exigirRamaAislada(env, archivo) {
+  const principales = endpointsDe(leerArchivoEnv(path.join(ROOT, ".env")));
+  const repetidos = [...endpointsDe(env)].filter((ep) => principales.has(ep));
+  if (repetidos.length) {
+    throw new Error(
+      `CANDADO_RAMA: ${archivo} apunta a ${repetidos.length} endpoint(s) del .env principal. Solo se permite usarlo contra ramas de prueba de Neon.`,
+    );
+  }
+}
+
+// Lee .env (o el archivo de FARMAHUB_ENV_FILE); las variables del proceso tienen prioridad sobre el archivo. En el hosting
+// (Render) no hay .env: las variables llegan por el entorno. Si tampoco están ahí, urlDe avisa qué conexión falta.
+export function loadEnv() {
+  const archivo = process.env.FARMAHUB_ENV_FILE || ".env";
+  const file = path.resolve(ROOT, archivo);
+  if (archivo !== ".env" && !fs.existsSync(file)) throw new Error(`FARMAHUB_ENV_FILE: no existe ${archivo}.`);
+  const env = leerArchivoEnv(file);
+  if (!Object.keys(env).length && !process.env.CENTRAL_DATABASE_URL && !process.env.CENTRAL_DATABASE_URL_UNPOOLED) {
+    throw new Error(
+      "Falta la configuración: cree el archivo .env en la raíz del proyecto (cópielo de .env.example y complete las cadenas de Neon) o defina las variables de entorno.",
+    );
+  }
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value;
   }
+  if (file !== path.join(ROOT, ".env")) exigirRamaAislada(env, archivo);
   return env;
 }
 
