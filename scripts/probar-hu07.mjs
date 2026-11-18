@@ -193,18 +193,18 @@ try {
   );
 
   // --- Subida de la auditoría de la tienda al central
-  const antes = await contar(central, "select count(*) as n from auditoria_tienda where id_tienda = $1", [idTienda]);
+  const antes = await contar(central, "select count(*) as n from registro_actividad_central where id_tienda = $1", [idTienda]);
   const subida = await subirAuditoria(idTienda);
-  const despues = await contar(central, "select count(*) as n from auditoria_tienda where id_tienda = $1", [idTienda]);
+  const despues = await contar(central, "select count(*) as n from registro_actividad_central where id_tienda = $1", [idTienda]);
   check("la auditoría de la tienda sube al central", subida.enviados > 0 && despues > antes, `${antes} → ${despues}`);
   await subirAuditoria(idTienda);
-  check("reenviar no duplica", (await contar(central, "select count(*) as n from auditoria_tienda where id_tienda = $1", [idTienda])) === despues);
+  check("reenviar no duplica", (await contar(central, "select count(*) as n from registro_actividad_central where id_tienda = $1", [idTienda])) === despues);
   const maxLocal = await contar(local, "select coalesce(max(id_registro), 0) as n from registro_actividad");
-  const maxCentral = await contar(central, "select coalesce(max(id_registro), 0) as n from auditoria_tienda where id_tienda = $1", [idTienda]);
+  const maxCentral = await contar(central, "select coalesce(max(id_registro_tienda), 0) as n from registro_actividad_central where id_tienda = $1", [idTienda]);
   check("el central tiene hasta el último registro de la tienda", maxCentral === maxLocal, `${maxCentral} / ${maxLocal}`);
 
   // --- Auditoría no editable (criterio 3)
-  for (const [nombre, pool, tabla] of [["local", local, "registro_actividad"], ["central", central, "registro_actividad_central"], ["red", central, "auditoria_tienda"]]) {
+  for (const [nombre, pool, tabla] of [["local", local, "registro_actividad"], ["central", central, "registro_actividad_central"], ["red", central, "registro_actividad_central"]]) {
     let bloqueo = 0;
     for (const sql of [`update ${tabla} set detalle = 'x'`, `delete from ${tabla}`, `truncate ${tabla}`]) {
       try {

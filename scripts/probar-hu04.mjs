@@ -124,7 +124,7 @@ try {
   check("hay una segunda tienda en la red", Boolean(otraTienda));
   check("X en la otra tienda tiene su propio umbral (mínimo 500)", (await poner(otraTienda, idX, 500, 3)).status === 200);
   await pullReplica();
-  const ref = async (idMed) => (await local.query("select stock_minimo, dias_alerta_caducidad from umbral_stock_ref where id_medicamento = $1", [idMed])).rows[0];
+  const ref = async (idMed) => (await local.query("select stock_minimo, dias_alerta_caducidad from medicamento_ref where id_medicamento = $1 and stock_minimo is not null", [idMed])).rows[0];
   check("la tienda recibió su umbral y no el de la otra tienda", JSON.stringify(await ref(idX)) === JSON.stringify({ stock_minimo: 10, dias_alerta_caducidad: 30 }), JSON.stringify(await ref(idX)));
 
   // --- Stock bajo (criterio 1): el mínimo se compara contra el stock vendible
@@ -235,18 +235,18 @@ try {
   check("seis evaluaciones simultáneas no duplican alertas", dups.rowCount === 0 && (await contar(local, "select count(*) as n from alerta where estado = 'ACTIVA'")) === antesDup);
 
   // --- Producto sin umbral en esta tienda: el sistema lo avisa
-  await local.query("delete from umbral_stock_ref where id_medicamento = $1", [idQ]);
+  await local.query("update medicamento_ref set stock_minimo = null, dias_alerta_caducidad = null where id_medicamento = $1", [idQ]);
   await evaluarAlertas();
   check("un producto activo sin umbral en la tienda genera SIN_UMBRAL (ALTA)", tipos(await activas(idQ)) === "SIN_UMBRAL:ALTA");
-  await local.query("insert into umbral_stock_ref (id_medicamento, stock_minimo, dias_alerta_caducidad) values ($1, 0, 30)", [idQ]);
+  await local.query("update medicamento_ref set stock_minimo = 0, dias_alerta_caducidad = 30 where id_medicamento = $1", [idQ]);
   await evaluarAlertas();
   check("al configurarlo la alerta SIN_UMBRAL se resuelve", !(await activas(idQ)).some((x) => x.tipo === "SIN_UMBRAL"));
   check("un lote de un producto sin umbral igual avisa su caducidad (aviso por defecto de 30 días)", await (async () => {
-    await local.query("delete from umbral_stock_ref where id_medicamento = $1", [idQ]);
+    await local.query("update medicamento_ref set stock_minimo = null, dias_alerta_caducidad = null where id_medicamento = $1", [idQ]);
     const lq = await crearLote(idQ, "Q1", { cantidad: 5, dias: 20 });
     await evaluarAlertas();
     const t = (await activas(idQ)).some((a) => a.tipo === "CADUCIDAD_PROXIMA" && a.id_lote === lq);
-    await local.query("insert into umbral_stock_ref (id_medicamento, stock_minimo, dias_alerta_caducidad) values ($1, 0, 30)", [idQ]);
+    await local.query("update medicamento_ref set stock_minimo = 0, dias_alerta_caducidad = 30 where id_medicamento = $1", [idQ]);
     return t;
   })());
 

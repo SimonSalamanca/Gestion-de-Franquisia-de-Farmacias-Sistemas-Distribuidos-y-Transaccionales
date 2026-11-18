@@ -101,9 +101,8 @@ export async function buscarMedicamentos(query = {}) {
   const patron = `%${termino.replace(/[\\%_]/g, "\\$&")}%`;
   const filas = await local.query(
     `select m.id_medicamento, m.codigo_interno, m.nombre_comercial, m.principio_activo,
-            coalesce(s.vendible, 0)::int as stock, u.stock_minimo
+            coalesce(s.vendible, 0)::int as stock, m.stock_minimo
      from medicamento_ref m
-     left join umbral_stock_ref u on u.id_medicamento = m.id_medicamento
      left join lateral (
        select sum(l.cantidad_disponible) as vendible from lote l
        where l.id_medicamento = m.id_medicamento and l.estado = 'DISPONIBLE' and l.fecha_caducidad >= current_date

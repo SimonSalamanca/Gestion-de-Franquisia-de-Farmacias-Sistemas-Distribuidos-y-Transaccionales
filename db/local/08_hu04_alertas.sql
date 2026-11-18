@@ -1,5 +1,5 @@
 -- HU-04: alertas de stock bajo y de caducidad, y bloqueo automático de lotes vencidos. Idempotente.
--- Todo es local: funciona sin conexión con el central (RNF-04). Los umbrales llegan por réplica (umbral_stock_ref).
+-- Todo es local: funciona sin conexión con el central (RNF-04). Los umbrales llegan por réplica a medicamento_ref.
 
 -- El bloqueo automático lo hace el sistema, no una persona: la auditoría admite un actor nulo (el central ya lo admite).
 ALTER TABLE registro_actividad
@@ -42,6 +42,21 @@ CREATE INDEX IF NOT EXISTS idx_alerta_estado ON alerta (estado, nivel);
 --   SIN_UMBRAL        ALTA     medicamento activo sin umbral en esta tienda: nada lo vigila bien (no debería ocurrir)
 -- Stock vendible = lotes DISPONIBLE y no vencidos (la misma regla de HU-01 y de la venta). prioridad ordena dentro de un
 -- nivel: lo más vencido, lo más cercano a caducar o lo más escaso primero.
+-- Umbral de esta tienda para cada medicamento (lo envía el central con UMBRAL_UPSERT): ambos nulos = sin umbral. El nodo
+-- es de una sola tienda, así que va en la fila del medicamento (antes umbral_stock_ref; 16_reduccion_tablas.sql la fusiona).
+ALTER TABLE medicamento_ref
+    ADD COLUMN IF NOT EXISTS stock_minimo integer;
+ALTER TABLE medicamento_ref
+    ADD COLUMN IF NOT EXISTS dias_alerta_caducidad integer;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'medicamento_ref_umbral_check' AND conrelid = 'medicamento_ref'::regclass) THEN
+        ALTER TABLE medicamento_ref
+            ADD CONSTRAINT medicamento_ref_umbral_check CHECK ((stock_minimo IS NULL) = (dias_alerta_caducidad IS NULL));
+    END IF;
+END $$;
+
 CREATE OR REPLACE VIEW alertas_calculadas AS
 WITH stock AS (
     SELECT m.id_medicamento,
@@ -63,25 +78,23 @@ SELECT 'CADUCIDAD_PROXIMA', l.id_medicamento, l.id_lote,
        CASE WHEN l.fecha_caducidad - current_date <= 7 THEN 'ALTA' ELSE 'MEDIA' END,
        (l.fecha_caducidad - current_date)::numeric,
        jsonb_build_object('numero_lote', l.numero_lote, 'cantidad', l.cantidad_disponible, 'fecha_caducidad', l.fecha_caducidad::text,
-                          'dias_restantes', l.fecha_caducidad - current_date, 'dias_aviso', coalesce(u.dias_alerta_caducidad, 30))
+                          'dias_restantes', l.fecha_caducidad - current_date, 'dias_aviso', coalesce(m.dias_alerta_caducidad, 30))
 FROM lote l
 JOIN medicamento_ref m ON m.id_medicamento = l.id_medicamento AND m.activo
-LEFT JOIN umbral_stock_ref u ON u.id_medicamento = l.id_medicamento
 WHERE l.estado = 'DISPONIBLE' AND l.cantidad_disponible > 0 AND l.fecha_caducidad >= current_date
-  AND l.fecha_caducidad - current_date <= coalesce(u.dias_alerta_caducidad, 30)
+  AND l.fecha_caducidad - current_date <= coalesce(m.dias_alerta_caducidad, 30)
 UNION ALL
 SELECT CASE WHEN s.vendible = 0 THEN 'STOCK_AGOTADO' ELSE 'STOCK_BAJO' END, m.id_medicamento, NULL::integer,
-       CASE WHEN s.vendible = 0 THEN 'CRITICA' WHEN s.vendible * 2 <= u.stock_minimo THEN 'ALTA' ELSE 'MEDIA' END,
-       CASE WHEN u.stock_minimo > 0 THEN (s.vendible::numeric / u.stock_minimo) * 100 ELSE 0 END,
-       jsonb_build_object('stock', s.vendible, 'stock_minimo', u.stock_minimo)
+       CASE WHEN s.vendible = 0 THEN 'CRITICA' WHEN s.vendible * 2 <= m.stock_minimo THEN 'ALTA' ELSE 'MEDIA' END,
+       CASE WHEN m.stock_minimo > 0 THEN (s.vendible::numeric / m.stock_minimo) * 100 ELSE 0 END,
+       jsonb_build_object('stock', s.vendible, 'stock_minimo', m.stock_minimo)
 FROM medicamento_ref m
 JOIN stock s ON s.id_medicamento = m.id_medicamento
-JOIN umbral_stock_ref u ON u.id_medicamento = m.id_medicamento
-WHERE m.activo AND (s.vendible = 0 OR (u.stock_minimo > 0 AND s.vendible <= u.stock_minimo))
+WHERE m.activo AND m.stock_minimo IS NOT NULL AND (s.vendible = 0 OR (m.stock_minimo > 0 AND s.vendible <= m.stock_minimo))
 UNION ALL
 SELECT 'SIN_UMBRAL', m.id_medicamento, NULL::integer, 'ALTA', 0::numeric, '{}'::jsonb
 FROM medicamento_ref m
-WHERE m.activo AND NOT EXISTS (SELECT 1 FROM umbral_stock_ref u WHERE u.id_medicamento = m.id_medicamento);
+WHERE m.activo AND m.stock_minimo IS NULL;
 
 -- Una pasada de evaluación, en una sola llamada (con la base remota cada ida y vuelta cuesta ~130 ms):
 --   1. bloquea los lotes cuya caducidad ya se cumplió (criterio 3) y lo audita con el sistema como actor;

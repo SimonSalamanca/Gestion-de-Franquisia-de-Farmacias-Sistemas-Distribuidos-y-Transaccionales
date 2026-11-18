@@ -54,7 +54,7 @@ const codigo = `HU03-${S}`.toUpperCase();
 const creado = await central.query(
   // HU-04: un medicamento activo necesita umbral en cada tienda activa (se crean en la misma transacción).
   `with m as (insert into medicamento (codigo_interno, nombre_comercial, principio_activo) values ($1, $2, 'prueba de precios') returning id_medicamento),
-        u as (insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
+        u as (insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
    select id_medicamento from m`,
   [codigo, `Prueba Precios ${S}`],
 );

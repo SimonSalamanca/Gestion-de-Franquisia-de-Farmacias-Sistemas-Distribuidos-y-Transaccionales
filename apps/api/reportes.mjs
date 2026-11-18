@@ -221,12 +221,12 @@ with v as (
 ), s as (
   select i.id_tienda,
          count(*) filter (where i.cantidad_disponible <= 0) as agotados,
-         count(*) filter (where i.cantidad_disponible > 0 and i.cantidad_disponible <= u.stock_minimo) as bajo_minimo,
+         count(*) filter (where i.cantidad_disponible > 0 and i.cantidad_disponible <= i.stock_minimo) as bajo_minimo,
          count(*) as con_reporte,
          max(i.fecha_sincronizacion) as sync
-  from inventario_consolidado i
+  from medicamento_tienda i
   join medicamento m on m.id_medicamento = i.id_medicamento and m.activo
-  left join umbral_stock u on u.id_tienda = i.id_tienda and u.id_medicamento = i.id_medicamento
+  where i.fecha_sincronizacion is not null
   group by i.id_tienda
 ), activos as (
   select count(*) as total from medicamento where activo

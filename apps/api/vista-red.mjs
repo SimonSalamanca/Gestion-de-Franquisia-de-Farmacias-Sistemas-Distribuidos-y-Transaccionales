@@ -39,7 +39,7 @@ async function filtrosDe(query, db) {
 
 const SQL_TIENDAS = `
 select t.id_tienda, t.nombre, t.ciudad,
-       (select max(i.fecha_sincronizacion) from inventario_consolidado i where i.id_tienda = t.id_tienda) as ultima_foto,
+       (select max(i.fecha_sincronizacion) from medicamento_tienda i where i.id_tienda = t.id_tienda) as ultima_foto,
        (select max(v.fecha_sincronizacion) from venta_consolidada v where v.id_tienda = t.id_tienda) as ultima_venta,
        (select to_char(min(c.fecha), 'YYYY-MM-DD') from venta_categoria_consolidada c where c.id_tienda = t.id_tienda) as categorias_desde,
        now()::timestamp as ahora
@@ -74,11 +74,11 @@ select t.id_tienda,
        coalesce(sum(i.cantidad_disponible), 0)::int as unidades,
        count(i.id_medicamento)::int as con_reporte,
        (count(*) filter (where i.cantidad_disponible <= 0))::int as agotados,
-       (count(*) filter (where i.cantidad_disponible > 0 and i.cantidad_disponible <= u.stock_minimo))::int as bajo_minimo,
+       (count(*) filter (where i.cantidad_disponible > 0 and i.cantidad_disponible <= i.stock_minimo))::int as bajo_minimo,
        ((select count(*) from med) - count(i.id_medicamento))::int as sin_reporte
 from tienda t
-left join (inventario_consolidado i join med on med.id_medicamento = i.id_medicamento) on i.id_tienda = t.id_tienda
-left join umbral_stock u on u.id_tienda = i.id_tienda and u.id_medicamento = i.id_medicamento
+left join (medicamento_tienda i join med on med.id_medicamento = i.id_medicamento)
+       on i.id_tienda = t.id_tienda and i.fecha_sincronizacion is not null
 where t.activa and ($1::int is null or t.id_tienda = $1)
 group by t.id_tienda`;
 
@@ -201,13 +201,12 @@ export async function inventarioRed(query, db = central) {
      select m.id_medicamento, m.codigo_interno, m.nombre_comercial, m.principio_activo, m.total::int as total,
             coalesce(c.nombre, 'Sin categoría') as categoria,
             jsonb_agg(jsonb_build_object(
-              'id_tienda', t.id_tienda, 'cantidad', i.cantidad_disponible, 'stock_minimo', u.stock_minimo,
+              'id_tienda', t.id_tienda, 'cantidad', i.cantidad_disponible, 'stock_minimo', i.stock_minimo,
               'sincronizado', to_char(i.fecha_sincronizacion, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
             ) order by t.nombre) as tiendas
      from m
      cross join tienda t
-     left join inventario_consolidado i on i.id_tienda = t.id_tienda and i.id_medicamento = m.id_medicamento
-     left join umbral_stock u on u.id_tienda = t.id_tienda and u.id_medicamento = m.id_medicamento
+     left join medicamento_tienda i on i.id_tienda = t.id_tienda and i.id_medicamento = m.id_medicamento
      left join categoria c on c.id_categoria = m.id_categoria
      where t.activa and ($4::int is null or t.id_tienda = $4)
      group by m.id_medicamento, m.codigo_interno, m.nombre_comercial, m.principio_activo, m.total, c.nombre

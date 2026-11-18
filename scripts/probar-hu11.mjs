@@ -57,7 +57,7 @@ if (!proveedor) {
 // Un medicamento de la corrida: 1000 pesos sin impuesto, para que los totales sean exactos.
 const creado = await central.query(
   `with m as (insert into medicamento (codigo_interno, nombre_comercial, principio_activo, requiere_receta, tasa_impuesto) values ($1, $2, 'prueba de cierre de caja', false, 0) returning id_medicamento),
-        u as (insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
+        u as (insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
    select id_medicamento from m`,
   [`HU11-${S}`, `Prueba Cierre ${S}`],
 );

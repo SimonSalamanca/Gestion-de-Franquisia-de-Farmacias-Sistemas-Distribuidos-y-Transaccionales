@@ -93,7 +93,7 @@ check("página fuera de rango: vacía pero con el total", lejos.resultados.lengt
 const otra = (
   await central.query(
     `select ic.id_tienda, ic.id_medicamento, ic.cantidad_disponible, m.codigo_interno
-     from inventario_consolidado ic
+     from medicamento_tienda ic
      join tienda t on t.id_tienda = ic.id_tienda and t.activa = true
      join medicamento m on m.id_medicamento = ic.id_medicamento
      where ic.id_tienda <> $1 and ic.cantidad_disponible > 0
@@ -137,7 +137,7 @@ const stockIbu = await contar(
   [ibu],
 );
 const leerCentral = async () =>
-  (await central.query("select cantidad_disponible, fecha_sincronizacion from inventario_consolidado where id_tienda = $1 and id_medicamento = $2", [idTienda, ibu])).rows[0];
+  (await central.query("select cantidad_disponible, fecha_sincronizacion from medicamento_tienda where id_tienda = $1 and id_medicamento = $2 and fecha_sincronizacion is not null", [idTienda, ibu])).rows[0];
 const snapshot = (key, cantidad, calculadoEn) => ({
   idempotency_key: key,
   tipo_evento: "STOCK_SNAPSHOT",

@@ -7,7 +7,7 @@ import { dejarConflicto } from "../conflictos.mjs";
 async function umbralUpsert(client, event, idTienda) {
   const payload = event.payload;
   if (Number(payload.id_tienda) !== Number(idTienda)) return;
-  // umbral_stock_ref tiene FK a medicamento_ref: si el medicamento aún no llegó, se deja constancia
+  // El umbral vive en la fila del medicamento (medicamento_ref): si el medicamento aún no llegó, se deja constancia
   // en vez de abortar el lote completo (lo que bloquearía la réplica de esta tienda).
   const medicamento = await client.query("select 1 from medicamento_ref where id_medicamento = $1", [
     payload.id_medicamento,
@@ -22,10 +22,7 @@ async function umbralUpsert(client, event, idTienda) {
     return;
   }
   await client.query(
-    `insert into umbral_stock_ref (id_medicamento, stock_minimo, dias_alerta_caducidad)
-     values ($1, $2, $3)
-     on conflict (id_medicamento) do update
-     set stock_minimo = excluded.stock_minimo, dias_alerta_caducidad = excluded.dias_alerta_caducidad`,
+    "update medicamento_ref set stock_minimo = $2, dias_alerta_caducidad = $3 where id_medicamento = $1",
     [payload.id_medicamento, payload.stock_minimo, payload.dias_alerta_caducidad],
   );
 }

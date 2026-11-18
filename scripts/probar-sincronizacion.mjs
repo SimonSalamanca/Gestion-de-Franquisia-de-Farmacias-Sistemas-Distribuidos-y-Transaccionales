@@ -1,6 +1,6 @@
 import "./lib/owner.mjs";
 // Prueba de punta a punta del flujo de stock entre el nodo local de la tienda y el nodo central
-// (HU-01 criterio 4, HU-02 y RNF-04): un movimiento en la tienda llega a inventario_consolidado por el
+// (HU-01 criterio 4, HU-02 y RNF-04): un movimiento en la tienda llega a medicamento_tienda por el
 // ciclo real de sincronización del API, y lo hecho sin conexión llega al reconectar.
 // Requiere el API del nodo local corriendo (npm run api) con FARMAHUB_SIMULACION activo, apuntado a las MISMAS bases que
 // este script: antes de escribir se comprueba que la sesión abierta por el API exista en la base local de esta configuración.
@@ -63,7 +63,7 @@ const stockLocal = async () =>
 const enCentral = async () =>
   (
     await central.query(
-      "select cantidad_disponible, fecha_sincronizacion from inventario_consolidado where id_tienda = $1 and id_medicamento = $2",
+      "select cantidad_disponible, fecha_sincronizacion from medicamento_tienda where id_tienda = $1 and id_medicamento = $2 and fecha_sincronizacion is not null",
       [idTienda, med.id_medicamento],
     )
   ).rows[0];

@@ -239,7 +239,7 @@ export async function guardarUmbral(token, key, idTienda, body) {
     const med = await client.query("select id_medicamento from medicamento where id_medicamento = $1", [idMedicamento]);
     if (med.rowCount === 0) return guardar(client, key, hmac, fail(404, "MEDICAMENTO", "Medicamento no existe"));
     const saved = await client.query(
-      `insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
+      `insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
        values ($1, $2, $3, $4)
        on conflict (id_tienda, id_medicamento) do update
        set stock_minimo = excluded.stock_minimo,
@@ -263,9 +263,9 @@ export async function listarUmbrales(token, idTienda) {
   if (acceso.status) return acceso;
   const rows = await central.query(
     `select u.id_tienda, u.id_medicamento, u.stock_minimo, u.dias_alerta_caducidad, m.nombre_comercial
-     from umbral_stock u
+     from medicamento_tienda u
      join medicamento m on m.id_medicamento = u.id_medicamento
-     where u.id_tienda = $1
+     where u.id_tienda = $1 and u.stock_minimo is not null
      order by m.nombre_comercial`,
     [idTienda],
   );
@@ -280,10 +280,11 @@ export async function disponibilidad(token, query) {
   const rows = await central.query(
     `select t.id_tienda, t.nombre, t.ciudad, m.id_medicamento, m.nombre_comercial,
             i.cantidad_disponible, i.fecha_sincronizacion
-     from inventario_consolidado i
+     from medicamento_tienda i
      join tienda t on t.id_tienda = i.id_tienda and t.activa = true
      join medicamento m on m.id_medicamento = i.id_medicamento
-     where ($1::int is null or i.id_medicamento = $1)
+     where i.fecha_sincronizacion is not null
+       and ($1::int is null or i.id_medicamento = $1)
        and ($2::text = '' or m.nombre_comercial ilike '%' || $2 || '%' or m.principio_activo ilike '%' || $2 || '%' or m.codigo_interno ilike '%' || $2 || '%')
      order by t.nombre, m.nombre_comercial`,
     [idMedicamento ? Number(idMedicamento) : null, q],

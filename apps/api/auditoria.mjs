@@ -82,16 +82,15 @@ export async function auditoriaRed(query, { soloCuentasDe = null } = {}) {
     tienda = Number(query.tienda);
     if (!Number.isInteger(tienda) || tienda < 1) throw invalido("Tienda no válida", { campo: "tienda" });
   }
+  // Una sola tabla: id_tienda nulo = lo registró el central; si no, lo subió esa tienda (con su id local).
   const origenes = `
-    select 'central'::text as origen, null::int as id_tienda, a.id_registro::bigint as id_registro, a.id_empleado,
+    select case when a.id_tienda is null then 'central' else 'tienda' end::text as origen, a.id_tienda,
+           coalesce(a.id_registro_tienda, a.id_registro)::bigint as id_registro, a.id_empleado,
            a.accion, a.entidad_afectada, a.id_entidad_afectada, a.fecha_hora, a.detalle
     from registro_actividad_central a
-    where ($6::int is null or (a.entidad_afectada = 'empleado'
-           and exists (select 1 from empleado o where o.id_empleado = a.id_entidad_afectada and o.id_tienda = $6)))
-    union all
-    select 'tienda', t.id_tienda, t.id_registro, t.id_empleado, t.accion, t.entidad_afectada, t.id_entidad_afectada, t.fecha_hora, t.detalle
-    from auditoria_tienda t
-    where $6::int is null`;
+    where $6::int is null
+       or (a.id_tienda is null and a.entidad_afectada = 'empleado'
+           and exists (select 1 from empleado o where o.id_empleado = a.id_entidad_afectada and o.id_tienda = $6))`;
   const valores = [f.usuario, f.accion, f.desde, f.hasta, (f.pagina - 1) * POR_PAGINA, soloCuentasDe, tienda, soloCentral];
   const filtro = `
     where ($1::text is null or lower(e.usuario) like $1 escape '\\' or lower(e.nombre_completo) like $1 escape '\\')
@@ -113,7 +112,7 @@ export async function auditoriaRed(query, { soloCuentasDe = null } = {}) {
       valores,
     ),
     central.query(
-      `select accion from registro_actividad_central union select accion from auditoria_tienda order by accion`,
+      `select distinct accion from registro_actividad_central order by accion`,
     ),
   ]);
   return { origen: soloCuentasDe ? "cuentas" : "red", ...respuesta(filas.rows, f.pagina), acciones: acciones.rows.map((row) => row.accion) };
@@ -136,12 +135,12 @@ export async function subirAuditoria(idTienda) {
   );
   if (filas.rowCount === 0) return { enviados: 0, cursor: desde };
   await central.query(
-    `insert into auditoria_tienda (id_tienda, id_registro, id_empleado, accion, entidad_afectada, id_entidad_afectada, fecha_hora, detalle)
+    `insert into registro_actividad_central (id_tienda, id_registro_tienda, id_empleado, accion, entidad_afectada, id_entidad_afectada, fecha_hora, detalle)
      select $1, a.id_registro, a.id_empleado, a.accion, a.entidad_afectada, a.id_entidad_afectada, a.fecha_hora::timestamp, a.detalle
      from jsonb_to_recordset($2::jsonb) as a(
        id_registro int, id_empleado int, accion varchar, entidad_afectada varchar, id_entidad_afectada int, fecha_hora text, detalle varchar
      )
-     on conflict (id_tienda, id_registro) do nothing`,
+     on conflict (id_tienda, id_registro_tienda) do nothing`,
     [idTienda, JSON.stringify(filas.rows.map(({ estable: _estable, ...fila }) => fila))],
   );
   let nuevo = desde;

@@ -34,7 +34,7 @@ for (const f of archivos(RAIZ)) {
   // Los altas (insert) de catálogo las publica el arranque del nodo (migrate); los cambios de estado no, así que se exigen
   // por el helper.
   lineas.forEach((linea, i) => {
-    if (!/\b(update|delete\s+from)\s+(medicamento|proveedor|tienda|empleado|precio_medicamento|umbral_stock|rol_permiso|control_acceso|bloqueo_canonico|sesion_activa)\b/i.test(linea)) return;
+    if (!/\b(update|delete\s+from)\s+(medicamento|proveedor|tienda|empleado|precio_medicamento|medicamento_tienda|rol_permiso|control_acceso|sesion_activa)\b/i.test(linea)) return;
     // Escritura sobre la base local (no se replica): no aplica.
     const contexto = lineas.slice(Math.max(0, i - 2), i + 1).join("\n");
     if (/\blocal\.(query|connect)\(/.test(contexto) && !/\bcentral\.(query|connect)\(/.test(contexto)) return;

@@ -56,7 +56,7 @@ export function scriptsDe(nodo) {
 // de cierres son append-only también para él (además de los disparadores de cada tabla).
 const ROL_APP = "farmahub_datos";
 const SOLO_AGREGAR = {
-  central: ["registro_actividad_central", "replica_evento", "inbox_sync", "auditoria_tienda"],
+  central: ["registro_actividad_central", "replica_evento", "inbox_sync"],
   local: [
     "registro_actividad", "cierre_caja", "cierre_caja_metodo_pago", "cierre_caja_empleado", "apertura_caja", "recepcion",
     "detalle_recepcion", "diferencia_recepcion", "movimiento_inventario", "detalle_factura", "factura_metodo_pago", "devolucion_pago",

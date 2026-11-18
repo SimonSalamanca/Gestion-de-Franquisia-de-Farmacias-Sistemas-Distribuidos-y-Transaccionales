@@ -206,7 +206,7 @@ const stockLocal = await contar(
    where id_medicamento = $1 and estado = 'DISPONIBLE' and fecha_caducidad >= current_date`,
   [ibuprofeno],
 );
-const consolidado = await central.query("select cantidad_disponible from inventario_consolidado where id_tienda = $1 and id_medicamento = $2", [idTienda, ibuprofeno]);
+const consolidado = await central.query("select cantidad_disponible from medicamento_tienda where id_tienda = $1 and id_medicamento = $2 and fecha_sincronizacion is not null", [idTienda, ibuprofeno]);
 check("al reconectar el central tiene el stock vendible de la tienda", Number(consolidado.rows[0]?.cantidad_disponible) === stockLocal, `central=${consolidado.rows[0]?.cantidad_disponible} local=${stockLocal}`);
 
 // --- Bitácora solo de inserción (RNF-10): el API no expone rutas de edición ---

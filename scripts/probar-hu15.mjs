@@ -25,7 +25,7 @@ for (const row of sobras.rows) {
 }
 
 const antes = await central.query("select id_tienda, nombre, version_tienda, activa from tienda order by id_tienda");
-const umbralAntes = await central.query("select id_tienda, count(*)::int as n from umbral_stock group by id_tienda");
+const umbralAntes = await central.query("select id_tienda, count(*)::int as n from medicamento_tienda where stock_minimo is not null group by id_tienda");
 const admin = await login({
   nodo: "central",
   usuario: "admin.general",
@@ -80,7 +80,7 @@ if (med.rowCount === 0) {
   med = await central.query(
     `with m as (insert into medicamento (codigo_interno, nombre_comercial, principio_activo)
                values ('HU15-TEST', 'Prueba HU15', 'prueba') returning id_medicamento),
-          u as (insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
+          u as (insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
      select id_medicamento from m`,
   );
   await publicarAltaMedicamento(med.rows[0].id_medicamento);
@@ -93,7 +93,7 @@ const umbral = await guardarUmbral(token, crypto.randomUUID(), id, {
   dias_alerta_caducidad: 12,
 });
 check("umbral propio", umbral.status === 200, umbral.body.mensaje || "");
-const umbralDespues = await central.query("select id_tienda, count(*)::int as n from umbral_stock group by id_tienda");
+const umbralDespues = await central.query("select id_tienda, count(*)::int as n from medicamento_tienda where stock_minimo is not null group by id_tienda");
 const ajenos = umbralAntes.rows.every((row) => {
   const now = umbralDespues.rows.find((item) => item.id_tienda === row.id_tienda);
   return now && now.n === row.n;

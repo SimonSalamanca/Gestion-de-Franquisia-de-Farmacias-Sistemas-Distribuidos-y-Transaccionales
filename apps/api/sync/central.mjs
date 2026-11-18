@@ -15,14 +15,16 @@ async function stockSnapshot(client, idTienda, event) {
   // Una sola sentencia para toda la foto (HU-16: la completa trae todos los medicamentos y con Neon cada ida y vuelta
   // cuesta ~130 ms). Una foto vieja que llega tarde no pisa una más nueva.
   await client.query(
-    `insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
+    // La fila puede existir solo con el umbral (fecha nula = nunca reportado): la primera foto siempre entra.
+    `insert into medicamento_tienda (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
      select distinct on (i.id_medicamento) $1, i.id_medicamento, i.cantidad, $2::timestamp
      from jsonb_to_recordset($3::jsonb) as i(id_medicamento int, cantidad int)
      order by i.id_medicamento
      on conflict (id_tienda, id_medicamento) do update
      set cantidad_disponible = excluded.cantidad_disponible,
          fecha_sincronizacion = excluded.fecha_sincronizacion
-     where inventario_consolidado.fecha_sincronizacion <= excluded.fecha_sincronizacion`,
+     where medicamento_tienda.fecha_sincronizacion is null
+        or medicamento_tienda.fecha_sincronizacion <= excluded.fecha_sincronizacion`,
     [idTienda, calculadoEn, JSON.stringify(items)],
   );
 }

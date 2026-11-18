@@ -65,7 +65,7 @@ async function crearMedicamento(sufijo, { precio, minimo = 0 }) {
   const r = await central.query(
     `with m as (insert into medicamento (codigo_interno, nombre_comercial, principio_activo, requiere_receta, tasa_impuesto)
                values ($1, $2, 'prueba de reportes', false, 0) returning id_medicamento),
-          u as (insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
+          u as (insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
                 select t.id_tienda, m.id_medicamento, $3, 30 from tienda t cross join m where t.activa returning 1)
      select id_medicamento from m`,
     [`HU05-${S}-${sufijo}`, `Prueba Reportes ${S}-${sufijo}`, minimo],
@@ -224,7 +224,7 @@ try {
   check("facturas en el central +4 (la combinada cuenta en cada método)", fila(red1).facturas - fila(red0).facturas === 4, String(fila(red1).facturas - fila(red0).facturas));
   check("la tienda trae su última sincronización de ventas y de stock", fila(red1).ultima_sync_ventas && fila(red1).ultima_sync_stock && !fila(red1).sin_datos);
   check("C cuenta como bajo mínimo en el central", fila(red1).bajo_minimo - fila(red0).bajo_minimo >= 1, `${fila(red0).bajo_minimo} -> ${fila(red1).bajo_minimo}`);
-  const consolidadoD = await central.query("select 1 from inventario_consolidado where id_tienda = $1 and id_medicamento = $2", [TIENDA, idD]);
+  const consolidadoD = await central.query("select 1 from medicamento_tienda where id_tienda = $1 and id_medicamento = $2 and fecha_sincronizacion is not null", [TIENDA, idD]);
   check("D, sin movimientos, cuenta como sin reporte de stock", consolidadoD.rowCount === 0 && fila(red1).sin_reporte >= 1);
   const activas = new Set((await central.query("select id_tienda from tienda where activa")).rows.map((r) => r.id_tienda));
   check("solo tiendas activas", red1.tiendas.length === activas.size && red1.tiendas.every((t) => activas.has(t.id_tienda)));

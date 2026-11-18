@@ -57,9 +57,10 @@ const pruebas = [
         from replica_evento where tipo_evento = 'UMBRAL_UPSERT'
         order by (payload->>'id_tienda')::int, (payload->>'id_medicamento')::int, id_evento desc)
       select u.id_tienda as id, u.stock_minimo::text as tabla, x.payload->>'stock_minimo' as evento
-      from umbral_stock u left join ult x on x.t = u.id_tienda and x.m = u.id_medicamento
-      where x.t is null or x.payload->>'stock_minimo' is distinct from u.stock_minimo::text
-         or x.payload->>'dias_alerta_caducidad' is distinct from u.dias_alerta_caducidad::text`,
+      from medicamento_tienda u left join ult x on x.t = u.id_tienda and x.m = u.id_medicamento
+      where u.stock_minimo is not null
+        and (x.t is null or x.payload->>'stock_minimo' is distinct from u.stock_minimo::text
+             or x.payload->>'dias_alerta_caducidad' is distinct from u.dias_alerta_caducidad::text)`,
   },
 ];
 

@@ -290,7 +290,7 @@ await paso("CA5 bloqueo por 5 intentos fallidos (lote en un round-trip)", async 
   const ep = Number(estadoLocal.epoch);
   const converge = await esperar(async () => {
     const c = await uno(central, "select estado from control_acceso where id_empleado = $1", [cajero.id_empleado]);
-    const canon = await uno(central, "select count(*)::int as n from bloqueo_canonico where id_empleado = $1 and epoch = $2", [cajero.id_empleado, ep]);
+    const canon = await uno(central, "select count(*)::int as n from control_acceso where id_empleado = $1 and epoch_bloqueo = $2 and bloqueo_canonico_hasta is not null", [cajero.id_empleado, ep]);
     const l = await uno(local, "select provisional, epoch from control_acceso where id_empleado = $1", [cajero.id_empleado]);
     return Boolean(c && c.estado === "BLOQUEADO" && canon && canon.n === 1 && l && l.provisional === false && Number(l.epoch) === ep);
   });

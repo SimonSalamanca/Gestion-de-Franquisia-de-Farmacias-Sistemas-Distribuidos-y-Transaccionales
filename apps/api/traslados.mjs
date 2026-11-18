@@ -79,8 +79,8 @@ async function avisarEstado(client, t, estado, motivo = null) {
 // todavía no descontó (si no, dos solicitudes simultáneas podrían prometer las mismas unidades).
 async function disponibleEn(db, idOrigen, idMedicamento) {
   const r = await db.query(
-    `select coalesce((select cantidad_disponible from inventario_consolidado where id_tienda = $1 and id_medicamento = $2), 0)::int as consolidado,
-            (select fecha_sincronizacion from inventario_consolidado where id_tienda = $1 and id_medicamento = $2) as al,
+    `select coalesce((select cantidad_disponible from medicamento_tienda where id_tienda = $1 and id_medicamento = $2), 0)::int as consolidado,
+            (select fecha_sincronizacion from medicamento_tienda where id_tienda = $1 and id_medicamento = $2) as al,
             coalesce((select sum(d.cantidad) from traslado t join detalle_traslado d on d.id_traslado = t.id_traslado
                       where t.id_tienda_origen = $1 and d.id_medicamento = $2 and t.estado = 'SOLICITADO'), 0)::int as comprometido`,
     [idOrigen, idMedicamento],
@@ -95,7 +95,7 @@ export async function origenesPara(idDestino, idMedicamento) {
     `select t.id_tienda, t.nombre, t.ciudad, i.cantidad_disponible::int as consolidado, i.fecha_sincronizacion as al,
             coalesce((select sum(d.cantidad) from traslado x join detalle_traslado d on d.id_traslado = x.id_traslado
                       where x.id_tienda_origen = t.id_tienda and d.id_medicamento = $2 and x.estado = 'SOLICITADO'), 0)::int as comprometido
-     from tienda t join inventario_consolidado i on i.id_tienda = t.id_tienda and i.id_medicamento = $2
+     from tienda t join medicamento_tienda i on i.id_tienda = t.id_tienda and i.id_medicamento = $2
      where t.activa and t.id_tienda <> $1 and i.cantidad_disponible > 0
      order by i.cantidad_disponible desc, t.nombre`,
     [idDestino, idMedicamento],

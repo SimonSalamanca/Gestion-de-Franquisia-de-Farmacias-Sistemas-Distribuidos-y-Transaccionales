@@ -57,3 +57,78 @@ BEGIN
     END IF;
     DROP TABLE medicamento_proveedor;
 END $$;
+
+-- 4. umbral_stock + inventario_consolidado -> medicamento_tienda (misma clave: tienda y medicamento).
+DO $$
+DECLARE
+    v_viejas bigint;
+    v_movidas bigint;
+BEGIN
+    IF to_regclass('umbral_stock') IS NOT NULL THEN
+        EXECUTE 'SELECT count(*) FROM umbral_stock' INTO v_viejas;
+        EXECUTE 'INSERT INTO medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
+                 SELECT id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad FROM umbral_stock
+                 ON CONFLICT (id_tienda, id_medicamento) DO UPDATE
+                 SET stock_minimo = excluded.stock_minimo, dias_alerta_caducidad = excluded.dias_alerta_caducidad';
+        EXECUTE 'SELECT count(*) FROM umbral_stock u JOIN medicamento_tienda m USING (id_tienda, id_medicamento)
+                  WHERE m.stock_minimo = u.stock_minimo AND m.dias_alerta_caducidad = u.dias_alerta_caducidad' INTO v_movidas;
+        IF v_movidas <> v_viejas THEN
+            RAISE EXCEPTION 'REDUCCION: se movieron % de % umbrales', v_movidas, v_viejas;
+        END IF;
+        DROP TABLE umbral_stock;
+    END IF;
+    IF to_regclass('inventario_consolidado') IS NOT NULL THEN
+        EXECUTE 'SELECT count(*) FROM inventario_consolidado' INTO v_viejas;
+        EXECUTE 'INSERT INTO medicamento_tienda (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
+                 SELECT id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion FROM inventario_consolidado
+                 ON CONFLICT (id_tienda, id_medicamento) DO UPDATE
+                 SET cantidad_disponible = excluded.cantidad_disponible, fecha_sincronizacion = excluded.fecha_sincronizacion';
+        EXECUTE 'SELECT count(*) FROM inventario_consolidado i JOIN medicamento_tienda m USING (id_tienda, id_medicamento)
+                  WHERE m.cantidad_disponible = i.cantidad_disponible AND m.fecha_sincronizacion = i.fecha_sincronizacion' INTO v_movidas;
+        IF v_movidas <> v_viejas THEN
+            RAISE EXCEPTION 'REDUCCION: se movieron % de % filas de stock consolidado', v_movidas, v_viejas;
+        END IF;
+        DROP TABLE inventario_consolidado;
+        -- Su id sustituto usaba una secuencia propia del script base, que no se elimina con la tabla.
+        DROP SEQUENCE IF EXISTS inventario_consolidado_id_inventario_consolidado_seq;
+    END IF;
+END $$;
+
+-- 5. auditoria_tienda -> registro_actividad_central (filas con id_tienda e id_registro_tienda).
+DO $$
+DECLARE
+    v_viejas bigint;
+    v_movidas bigint;
+BEGIN
+    IF to_regclass('auditoria_tienda') IS NULL THEN
+        RETURN;
+    END IF;
+    EXECUTE 'SELECT count(*) FROM auditoria_tienda' INTO v_viejas;
+    EXECUTE 'INSERT INTO registro_actividad_central (id_tienda, id_registro_tienda, id_empleado, accion, entidad_afectada,
+                                                     id_entidad_afectada, fecha_hora, detalle, recibido_en)
+             SELECT id_tienda, id_registro, id_empleado, accion, entidad_afectada, id_entidad_afectada, fecha_hora, detalle, recibido_en
+               FROM auditoria_tienda
+              ORDER BY recibido_en, id_tienda, id_registro
+             ON CONFLICT (id_tienda, id_registro_tienda) DO NOTHING';
+    EXECUTE 'SELECT count(*) FROM auditoria_tienda t JOIN registro_actividad_central r
+                ON r.id_tienda = t.id_tienda AND r.id_registro_tienda = t.id_registro
+               AND r.accion = t.accion AND r.fecha_hora = t.fecha_hora' INTO v_movidas;
+    IF v_movidas <> v_viejas THEN
+        RAISE EXCEPTION 'REDUCCION: se movieron % de % filas de auditoría de tiendas', v_movidas, v_viejas;
+    END IF;
+    DROP TABLE auditoria_tienda;
+END $$;
+
+-- 6. bloqueo_canonico -> control_acceso (epoch_bloqueo, bloqueo_canonico_hasta): por empleado, el de su última época.
+DO $$
+BEGIN
+    IF to_regclass('bloqueo_canonico') IS NULL THEN
+        RETURN;
+    END IF;
+    EXECUTE 'UPDATE control_acceso c
+                SET epoch_bloqueo = b.epoch, bloqueo_canonico_hasta = b.bloqueado_hasta
+               FROM (SELECT DISTINCT ON (id_empleado) id_empleado, epoch, bloqueado_hasta
+                       FROM bloqueo_canonico ORDER BY id_empleado, epoch DESC) b
+              WHERE c.id_empleado = b.id_empleado';
+    DROP TABLE bloqueo_canonico;
+END $$;

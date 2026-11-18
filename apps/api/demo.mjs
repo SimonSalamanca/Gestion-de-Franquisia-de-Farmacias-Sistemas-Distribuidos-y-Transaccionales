@@ -247,12 +247,14 @@ export async function seedRedDemo(idTienda) {
 
     // La tienda de la red no tiene nodo propio en la demo: su stock consolidado se siembra directo.
     await client.query(
-      `insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
+      `insert into medicamento_tienda (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
        select $1, m.id_medicamento, s.cantidad, now() at time zone 'UTC'
        from jsonb_to_recordset($2::jsonb) as s(orden int, codigo varchar, cantidad int)
        join medicamento m on m.codigo_interno = s.codigo
        order by s.orden
-       on conflict (id_tienda, id_medicamento) do nothing`,
+       on conflict (id_tienda, id_medicamento) do update
+       set cantidad_disponible = excluded.cantidad_disponible, fecha_sincronizacion = excluded.fecha_sincronizacion
+       where medicamento_tienda.fecha_sincronizacion is null`,
       [idRed, filas(STOCK_RED, ([codigo, cantidad]) => ({ codigo, cantidad }))],
     );
   });

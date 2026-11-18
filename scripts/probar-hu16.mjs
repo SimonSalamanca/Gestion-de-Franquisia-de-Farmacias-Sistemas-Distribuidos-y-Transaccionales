@@ -78,7 +78,7 @@ async function crearMedicamento(sufijo, { precio, tasa, categoria }) {
   const r = await central.query(
     `with m as (insert into medicamento (codigo_interno, nombre_comercial, principio_activo, id_categoria, requiere_receta, tasa_impuesto)
                values ($1, $2, 'prueba de vista de red', $3, false, $4) returning id_medicamento),
-          u as (insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
+          u as (insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
                 select t.id_tienda, m.id_medicamento, 5, 30 from tienda t cross join m where t.activa returning 1)
      select id_medicamento from m`,
     [`HU16-${S}-${sufijo}`, `Prueba Vista ${S}-${sufijo}`, categoria, tasa],
@@ -162,21 +162,23 @@ try {
   // Aplicación en el central: idempotente y monótona (una foto vieja no pisa una nueva). Dentro de una transacción revertida.
   await en(central, async (c) => {
     const idMed = foto.items[0].id_medicamento;
-    const actual = (await c.query("select cantidad_disponible, fecha_sincronizacion from inventario_consolidado where id_tienda = $1 and id_medicamento = $2", [TIENDA, idMed])).rows[0];
+    const actual = (await c.query("select cantidad_disponible, fecha_sincronizacion from medicamento_tienda where id_tienda = $1 and id_medicamento = $2 and fecha_sincronizacion is not null", [TIENDA, idMed])).rows[0];
     const vieja = { idempotency_key: nuevaKey(), tipo_evento: "STOCK_SNAPSHOT", payload: { calculado_en: "2020-01-01T00:00:00.000Z", items: [{ id_medicamento: idMed, cantidad: 987654 }] } };
     await aplicarEnCentral(c, TIENDA, vieja);
-    const tras = (await c.query("select cantidad_disponible from inventario_consolidado where id_tienda = $1 and id_medicamento = $2", [TIENDA, idMed])).rows[0];
+    const tras = (await c.query("select cantidad_disponible from medicamento_tienda where id_tienda = $1 and id_medicamento = $2 and fecha_sincronizacion is not null", [TIENDA, idMed])).rows[0];
     check("una foto vieja no pisa una más nueva", tras.cantidad_disponible === actual.cantidad_disponible);
     const nueva = { idempotency_key: nuevaKey(), tipo_evento: "STOCK_SNAPSHOT", payload: { calculado_en: new Date(Date.now() + 60000).toISOString(), items: [{ id_medicamento: idMed, cantidad: 4321 }, { id_medicamento: idMed, cantidad: 4321 }] } };
     await aplicarEnCentral(c, TIENDA, nueva);
     await aplicarEnCentral(c, TIENDA, nueva);
-    const tras2 = (await c.query("select cantidad_disponible from inventario_consolidado where id_tienda = $1 and id_medicamento = $2", [TIENDA, idMed])).rows[0];
+    const tras2 = (await c.query("select cantidad_disponible from medicamento_tienda where id_tienda = $1 and id_medicamento = $2 and fecha_sincronizacion is not null", [TIENDA, idMed])).rows[0];
     check("una foto nueva se aplica, también repetida y con ítems duplicados", tras2.cantidad_disponible === 4321);
   });
 
   // --- Criterio 5: frescura (dentro de transacciones revertidas)
   await en(central, async (c) => {
-    await c.query("update inventario_consolidado set fecha_sincronizacion = now()::timestamp - interval '20 minutes' where id_tienda = $1", [TIENDA]);
+    // guardia-permitido: solo envejece el stock consolidado (no se replica; el umbral de la fila no cambia) y la
+    // transacción se revierte.
+    await c.query("update medicamento_tienda set fecha_sincronizacion = now()::timestamp - interval '20 minutes' where id_tienda = $1 and fecha_sincronizacion is not null", [TIENDA]);
     await c.query("update venta_consolidada set fecha_sincronizacion = now()::timestamp - interval '20 minutes' where id_tienda = $1", [TIENDA]);
     const r = await vistaConsolidada({}, c);
     const t = r.tiendas.find((x) => x.id_tienda === TIENDA);
@@ -296,13 +298,15 @@ try {
         [S],
       )).rows.map((r) => r.id_tienda);
       await c.query(
-        `insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
+        `insert into medicamento_tienda (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
          select t, m, (t + m) % 40, now()::timestamp from unnest($1::int[]) t cross join unnest($2::int[]) m`,
         [tiendas, meds],
       );
       await c.query(
-        `insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
-         select t, m, 10, 30 from unnest($1::int[]) t cross join unnest($2::int[]) m`,
+        `insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
+         select t, m, 10, 30 from unnest($1::int[]) t cross join unnest($2::int[]) m
+         on conflict (id_tienda, id_medicamento) do update
+         set stock_minimo = excluded.stock_minimo, dias_alerta_caducidad = excluded.dias_alerta_caducidad`,
         [tiendas, meds],
       );
       const metodosRed = (await c.query("select id_metodo_pago from metodo_pago order by id_metodo_pago limit 4")).rows.map((r) => r.id_metodo_pago);

@@ -63,7 +63,7 @@ async function crearMedicamento(sufijo, { precio, tasa = 0, receta = false }) {
     // HU-04: un medicamento activo necesita umbral en cada tienda activa (se crean en la misma transacción).
     `with m as (insert into medicamento (codigo_interno, nombre_comercial, principio_activo, requiere_receta, tasa_impuesto)
                values ($1, $2, 'prueba de ventas', $3, $4) returning id_medicamento),
-          u as (insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
+          u as (insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
      select id_medicamento from m`,
     [`HU08-${S}-${sufijo}`, `Prueba Ventas ${S}-${sufijo}`, receta, tasa],
   );
@@ -270,7 +270,7 @@ try {
   check("el central suma la tarjeta de crédito de la segunda venta", centavos(despuesCr.total) - centavos(antesCr.total) === 1428715);
   const recla = (await central.query("select estado, id_tienda_reclamo from receta_emitida where codigo = $1", [codigoReceta])).rows[0];
   check("el central dio de baja la receta vendida", recla.estado === "RECLAMADA" && recla.id_tienda_reclamo === TIENDA);
-  check("el stock del controlado llegó al consolidado", Number((await central.query("select cantidad_disponible from inventario_consolidado where id_tienda = $1 and id_medicamento = $2", [TIENDA, idC])).rows[0]?.cantidad_disponible) === 18);
+  check("el stock del controlado llegó al consolidado", Number((await central.query("select cantidad_disponible from medicamento_tienda where id_tienda = $1 and id_medicamento = $2 and fecha_sincronizacion is not null", [TIENDA, idC])).rows[0]?.cantidad_disponible) === 18);
   // Un evento repetido (reintento tras una caída) no suma dos veces. Es un evento sin factura detrás: se prueba dentro de
   // una transacción que se revierte, para no dejar en venta_consolidada una venta que no existe (los reportes de HU-05 y la
   // vista de red de HU-16 la mostrarían).

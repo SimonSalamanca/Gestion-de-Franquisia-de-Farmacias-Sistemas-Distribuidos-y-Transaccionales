@@ -163,7 +163,7 @@ for (let i = 0; i < 2; i += 1) {
   ]);
 }
 const canon = await central.query(
-  "select count(*)::int as n from bloqueo_canonico where id_empleado = $1 and epoch = 3",
+  "select count(*)::int as n from control_acceso where id_empleado = $1 and epoch_bloqueo = 3 and bloqueo_canonico_hasta is not null",
   [id],
 );
 const estadoCanon = await central.query("select estado, intentos_en_epoch from control_acceso where id_empleado = $1", [id]);

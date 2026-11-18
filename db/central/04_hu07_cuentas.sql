@@ -22,22 +22,52 @@ CREATE TABLE IF NOT EXISTS codigo_restablecimiento (
 CREATE INDEX IF NOT EXISTS idx_codigo_restablecimiento_vigente
     ON codigo_restablecimiento (id_empleado) WHERE estado = 'VIGENTE';
 
--- Auditoría que suben las tiendas. Clave (tienda, id local): un reenvío no duplica.
--- Sin FK a empleado ni tienda: es historia, debe sobrevivir a cambios del catálogo.
-CREATE TABLE IF NOT EXISTS auditoria_tienda (
-    id_tienda integer NOT NULL,
-    id_registro integer NOT NULL,
-    id_empleado integer,
-    accion character varying(80) NOT NULL,
-    entidad_afectada character varying(60) NOT NULL,
-    id_entidad_afectada integer,
-    fecha_hora timestamp without time zone NOT NULL,
-    detalle character varying(400),
-    recibido_en timestamp with time zone NOT NULL DEFAULT now(),
-    PRIMARY KEY (id_tienda, id_registro)
-);
+-- Auditoría de toda la red en una sola tabla. registro_actividad_central guarda lo que registra el central (id_tienda
+-- nulo) y lo que suben las tiendas: id_tienda y el id local de la fila (id_registro_tienda). Clave (tienda, id local):
+-- un reenvío no duplica. (Antes las filas de las tiendas iban en auditoria_tienda; 16_reduccion_tablas.sql la fusiona.)
+ALTER TABLE registro_actividad_central
+    ADD COLUMN IF NOT EXISTS id_tienda integer;
+ALTER TABLE registro_actividad_central
+    ADD COLUMN IF NOT EXISTS id_registro_tienda integer;
+ALTER TABLE registro_actividad_central
+    ADD COLUMN IF NOT EXISTS recibido_en timestamp with time zone;
+ALTER TABLE registro_actividad_central
+    ALTER COLUMN recibido_en SET DEFAULT now();
 
-CREATE INDEX IF NOT EXISTS idx_auditoria_tienda_fecha ON auditoria_tienda (fecha_hora);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'registro_actividad_central_tienda_key' AND conrelid = 'registro_actividad_central'::regclass) THEN
+        ALTER TABLE registro_actividad_central
+            ADD CONSTRAINT registro_actividad_central_tienda_key UNIQUE (id_tienda, id_registro_tienda);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'registro_actividad_central_origen_check' AND conrelid = 'registro_actividad_central'::regclass) THEN
+        ALTER TABLE registro_actividad_central
+            ADD CONSTRAINT registro_actividad_central_origen_check CHECK ((id_tienda IS NULL) = (id_registro_tienda IS NULL));
+    END IF;
+END $$;
+
+-- Las filas de las tiendas no llevan FK a empleado ni a tienda: son historia y deben sobrevivir a cambios del catálogo
+-- (y un rechazo bloquearía la subida de la auditoría). Las del central sí exigen un empleado existente, como hacía su FK:
+-- la regla pasa a un disparador que solo mira las filas del central.
+ALTER TABLE registro_actividad_central
+    DROP CONSTRAINT IF EXISTS registro_actividad_central_id_empleado_fkey;
+
+CREATE OR REPLACE FUNCTION auditoria_central_empleado() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.id_tienda IS NULL AND NEW.id_empleado IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM empleado WHERE id_empleado = NEW.id_empleado) THEN
+        RAISE EXCEPTION 'El empleado % no existe (auditoría del central)', NEW.id_empleado USING ERRCODE = '23503';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER registro_actividad_central_empleado
+    BEFORE INSERT ON registro_actividad_central
+    FOR EACH ROW EXECUTE FUNCTION auditoria_central_empleado();
+
 CREATE INDEX IF NOT EXISTS idx_registro_actividad_central_fecha ON registro_actividad_central (fecha_hora);
 
 -- Bitácora no editable (RNF-10): nada se actualiza; solo se borra lo que ya cumplió 2 años de retención.
@@ -59,12 +89,6 @@ CREATE OR REPLACE TRIGGER registro_actividad_central_inmutable
     FOR EACH ROW EXECUTE FUNCTION auditoria_inmutable();
 CREATE OR REPLACE TRIGGER registro_actividad_central_sin_truncate
     BEFORE TRUNCATE ON registro_actividad_central
-    FOR EACH STATEMENT EXECUTE FUNCTION auditoria_inmutable();
-CREATE OR REPLACE TRIGGER auditoria_tienda_inmutable
-    BEFORE UPDATE OR DELETE ON auditoria_tienda
-    FOR EACH ROW EXECUTE FUNCTION auditoria_inmutable();
-CREATE OR REPLACE TRIGGER auditoria_tienda_sin_truncate
-    BEFORE TRUNCATE ON auditoria_tienda
     FOR EACH STATEMENT EXECUTE FUNCTION auditoria_inmutable();
 
 -- Permiso para consultar la auditoría (RNF-11: es un dato). Mismo patrón que 02_hu02_permisos.sql.

@@ -4,7 +4,7 @@ import { central, local } from "../apps/api/db.mjs";
 const c = await central.query(
   "select id_empleado, epoch, intentos_en_epoch, estado, bloqueado_hasta, provisional, id_snapshot from control_acceso where id_empleado in (1,2,3)",
 );
-const canon = await central.query("select * from bloqueo_canonico order by id_empleado, epoch");
+const canon = await central.query("select id_empleado, epoch_bloqueo as epoch, bloqueo_canonico_hasta as bloqueado_hasta from control_acceso where epoch_bloqueo is not null order by id_empleado");
 const inbox = await central.query(
   "select id_tienda_origen, tipo_evento, payload->>'epoch_observado' as epoch_obs, payload->>'observo_expiracion' as observo, payload->>'version_credencial_observada' as vc, payload->>'id_empleado' as id_emp from inbox_sync where tipo_evento in ('FAIL','SUCCESS','EXPIRADO') order by aplicado_en",
 );

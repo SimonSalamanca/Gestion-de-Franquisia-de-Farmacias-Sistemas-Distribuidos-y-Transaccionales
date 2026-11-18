@@ -9,7 +9,8 @@ export const UMBRAL_DEFECTO = { stock_minimo: 10, dias_alerta_caducidad: 30 };
 // Devuelve las filas creadas; publicarUmbralesPendientes las envía a las tiendas.
 export async function completarUmbrales(client, { idTienda = null, especificos = [], defecto = UMBRAL_DEFECTO } = {}) {
   const creados = await client.query(
-    `insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
+    // La fila puede existir solo con stock consolidado (sin umbral): entonces se le pone el umbral; si ya tiene, no se toca.
+    `insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
      select t.id_tienda, m.id_medicamento,
             coalesce(e.minimo, $2::int), coalesce(e.dias, $3::int)
      from tienda t
@@ -17,7 +18,9 @@ export async function completarUmbrales(client, { idTienda = null, especificos =
      left join jsonb_to_recordset($4::jsonb) as e(tienda int, codigo varchar, minimo int, dias int)
             on e.tienda = t.id_tienda and e.codigo = m.codigo_interno
      where t.activa and m.activo and ($1::int is null or t.id_tienda = $1)
-     on conflict (id_tienda, id_medicamento) do nothing
+     on conflict (id_tienda, id_medicamento) do update
+     set stock_minimo = excluded.stock_minimo, dias_alerta_caducidad = excluded.dias_alerta_caducidad
+     where medicamento_tienda.stock_minimo is null
      returning id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad`,
     [idTienda, defecto.stock_minimo, defecto.dias_alerta_caducidad, JSON.stringify(especificos)],
   );
@@ -25,12 +28,13 @@ export async function completarUmbrales(client, { idTienda = null, especificos =
 }
 
 // Publica a cada tienda los umbrales del central que todavía no tienen evento de réplica (los demo, los cargados a mano
-// y los que crea una tienda nueva). Va después de los medicamentos: umbral_stock_ref depende de medicamento_ref.
+// y los que crea una tienda nueva). Va después de los medicamentos: el umbral de la tienda vive en medicamento_ref.
 export async function publicarUmbralesPendientes(client) {
   const pendientes = await client.query(
     `select u.id_tienda, u.id_medicamento, u.stock_minimo, u.dias_alerta_caducidad
-     from umbral_stock u
-     where not exists (
+     from medicamento_tienda u
+     where u.stock_minimo is not null
+       and not exists (
        select 1 from replica_evento r
        where r.tipo_evento = 'UMBRAL_UPSERT'
          and (r.payload ->> 'id_tienda')::integer = u.id_tienda
@@ -49,11 +53,12 @@ export async function medicamentosSinUmbral(db) {
   const r = await db.query(
     `select m.id_medicamento, m.codigo_interno, m.nombre_comercial,
             array_agg(t.id_tienda order by t.id_tienda) as tiendas_sin_umbral,
-            coalesce((select sum(ic.cantidad_disponible) from inventario_consolidado ic where ic.id_medicamento = m.id_medicamento), 0)::int as unidades_en_red
+            coalesce((select sum(ic.cantidad_disponible) from medicamento_tienda ic where ic.id_medicamento = m.id_medicamento), 0)::int as unidades_en_red
      from medicamento m
      cross join tienda t
      where m.activo and t.activa
-       and not exists (select 1 from umbral_stock u where u.id_tienda = t.id_tienda and u.id_medicamento = m.id_medicamento)
+       and not exists (select 1 from medicamento_tienda u
+                       where u.id_tienda = t.id_tienda and u.id_medicamento = m.id_medicamento and u.stock_minimo is not null)
      group by m.id_medicamento, m.codigo_interno, m.nombre_comercial
      order by m.codigo_interno`,
   );

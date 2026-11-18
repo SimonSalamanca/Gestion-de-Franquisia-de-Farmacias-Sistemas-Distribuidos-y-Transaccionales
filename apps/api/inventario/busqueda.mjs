@@ -73,11 +73,11 @@ export async function buscar(query, ctx, db = local) {
   const coincidenciasSql = `
     select m.id_medicamento, m.codigo_interno, m.nombre_comercial, m.principio_activo,
            m.id_categoria, c.nombre as categoria, m.requiere_receta, m.requiere_refrigeracion,
-           coalesce(s.stock, 0)::int as stock_tienda, u.stock_minimo,
+           coalesce(s.stock, 0)::int as stock_tienda, m.stock_minimo,
            precio_vigente(m.id_medicamento) as precio,
            case
              when coalesce(s.stock, 0) <= 0 then 'agotado'
-             when u.stock_minimo is not null and s.stock <= u.stock_minimo then 'bajo'
+             when m.stock_minimo is not null and s.stock <= m.stock_minimo then 'bajo'
              else 'disponible'
            end as estado_stock,
            case
@@ -88,7 +88,6 @@ export async function buscar(query, ctx, db = local) {
     from medicamento_ref m
     left join categoria_ref c on c.id_categoria = m.id_categoria
     left join (${SQL_STOCK_VENDIBLE}) s on s.id_medicamento = m.id_medicamento
-    left join umbral_stock_ref u on u.id_medicamento = m.id_medicamento
     where m.activo = true
       and (${NORM("m.nombre_comercial")} like $1 escape '\\'
            or ${NORM("m.principio_activo")} like $1 escape '\\'
@@ -128,10 +127,10 @@ export async function buscar(query, ctx, db = local) {
     valores,
   );
   const red = await consultarCentral(
-    `select t.id_tienda, t.nombre, ic.id_medicamento, ic.cantidad_disponible, ic.fecha_sincronizacion, u.stock_minimo
+    `select t.id_tienda, t.nombre, ic.id_medicamento, ic.cantidad_disponible, ic.fecha_sincronizacion, ic.stock_minimo
      from tienda t
-     left join inventario_consolidado ic on ic.id_tienda = t.id_tienda and ic.id_medicamento = any($2::int[])
-     left join umbral_stock u on u.id_tienda = t.id_tienda and u.id_medicamento = ic.id_medicamento
+     left join medicamento_tienda ic on ic.id_tienda = t.id_tienda and ic.id_medicamento = any($2::int[])
+                                    and ic.fecha_sincronizacion is not null
      where t.id_tienda = $1 and t.activa = true`,
     [tienda, coincidencias.rows.map((row) => row.id_medicamento)],
   );
@@ -175,11 +174,11 @@ export async function existenciasEnRed(idMedicamento, query, ctx) {
 
   const result = await consultarCentral(
     `select t.id_tienda, t.nombre, t.ciudad, ic.cantidad_disponible as cantidad,
-            ic.fecha_sincronizacion as actualizado_en, u.stock_minimo
-     from inventario_consolidado ic
+            ic.fecha_sincronizacion as actualizado_en, ic.stock_minimo
+     from medicamento_tienda ic
      join tienda t on t.id_tienda = ic.id_tienda and t.activa = true
-     left join umbral_stock u on u.id_tienda = ic.id_tienda and u.id_medicamento = ic.id_medicamento
      where ic.id_medicamento = $1
+       and ic.fecha_sincronizacion is not null
        and ic.id_tienda <> $2
        and ($3::int is null or ic.id_tienda = $3)
      order by (ic.cantidad_disponible > 0) desc, ic.cantidad_disponible desc, t.nombre`,

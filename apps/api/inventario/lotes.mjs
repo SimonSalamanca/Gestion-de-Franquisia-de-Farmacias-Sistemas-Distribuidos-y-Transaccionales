@@ -412,11 +412,10 @@ const SELECT_LOTE = `
          l.id_medicamento, m.codigo_interno, m.nombre_comercial, m.principio_activo,
          m.requiere_refrigeracion, m.requiere_receta,
          l.id_proveedor, p.nombre_empresa as proveedor,
-         coalesce(u.dias_alerta_caducidad, 30) as dias_alerta_caducidad
+         coalesce(m.dias_alerta_caducidad, 30) as dias_alerta_caducidad
   from lote l
   join medicamento_ref m on m.id_medicamento = l.id_medicamento
-  join proveedor_ref p on p.id_proveedor = l.id_proveedor
-  left join umbral_stock_ref u on u.id_medicamento = l.id_medicamento`;
+  join proveedor_ref p on p.id_proveedor = l.id_proveedor`;
 
 export async function detalleLote(client, idLote) {
   const result = await client.query(`${SELECT_LOTE} where l.id_lote = $1`, [idLote]);
@@ -469,10 +468,9 @@ export async function historialLote(client, idLote) {
 
 export async function detalleMedicamento(client, idMedicamento) {
   const medicamento = await client.query(
-    `select m.*, c.nombre as categoria, u.stock_minimo, u.dias_alerta_caducidad
+    `select m.*, c.nombre as categoria
      from medicamento_ref m
      left join categoria_ref c on c.id_categoria = m.id_categoria
-     left join umbral_stock_ref u on u.id_medicamento = m.id_medicamento
      where m.id_medicamento = $1`,
     [idMedicamento],
   );

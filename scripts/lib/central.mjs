@@ -49,7 +49,7 @@ export function crearMedicamentoPrueba({ codigo, nombre, principio = "prueba", r
     const fila = med.rows[0];
     await publicar(cliente, null, "MEDICAMENTO_UPSERT", 1, fila);
     const umbrales = await cliente.query(
-      `insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
+      `insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
        select t.id_tienda, $1, 0, 30 from tienda t where t.activa returning id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad`,
       [fila.id_medicamento],
     );
@@ -65,7 +65,7 @@ export function publicarAltaMedicamento(idMedicamento) {
     const med = await cliente.query(`select ${COLUMNAS_MEDICAMENTO} from medicamento where id_medicamento = $1`, [idMedicamento]);
     await publicar(cliente, null, "MEDICAMENTO_UPSERT", 1, med.rows[0]);
     const umbrales = await cliente.query(
-      "select id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad from umbral_stock where id_medicamento = $1",
+      "select id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad from medicamento_tienda where id_medicamento = $1 and stock_minimo is not null",
       [idMedicamento],
     );
     for (const u of umbrales.rows) await publicar(cliente, u.id_tienda, "UMBRAL_UPSERT", 1, u);
@@ -171,15 +171,17 @@ export function fijarVersionCredencial(idEmpleado, version) {
 // Estado de bloqueo de una cuenta: se limpia (o se fija) y se publica el snapshot de acceso a sus tiendas.
 export function fijarEstadoAcceso(idEmpleado, { control = null, bloqueos = false, revocar = false } = {}) {
   return conTx(async (cliente) => {
-    if (bloqueos) await cliente.query("delete from bloqueo_canonico where id_empleado = $1", [idEmpleado]);
+    // El bloqueo canónico vive en la fila de control_acceso: con bloqueos = false se conserva al recrearla.
+    const previo = bloqueos
+      ? null
+      : (await cliente.query("select epoch_bloqueo, bloqueo_canonico_hasta from control_acceso where id_empleado = $1", [idEmpleado])).rows[0];
     await cliente.query("delete from control_acceso where id_empleado = $1", [idEmpleado]);
     if (control) {
-      await cliente.query("insert into control_acceso (id_empleado, epoch, intentos_en_epoch, estado) values ($1, $2, $3, $4)", [
-        idEmpleado,
-        control.epoch,
-        control.intentos,
-        control.estado,
-      ]);
+      await cliente.query(
+        `insert into control_acceso (id_empleado, epoch, intentos_en_epoch, estado, epoch_bloqueo, bloqueo_canonico_hasta)
+         values ($1, $2, $3, $4, $5, $6)`,
+        [idEmpleado, control.epoch, control.intentos, control.estado, previo?.epoch_bloqueo ?? null, previo?.bloqueo_canonico_hasta ?? null],
+      );
     }
     if (revocar) await cliente.query("delete from sesion_activa where id_empleado = $1", [idEmpleado]);
     await cliente.query("select publicar_snapshot($1, $2)", [idEmpleado, revocar]);
@@ -211,7 +213,7 @@ export function crearMedicamentoHeredado({ codigo, nombre, unidadesEnRed = 0, id
     await publicar(cliente, null, "MEDICAMENTO_UPSERT", 1, r.rows[0]);
     if (unidadesEnRed > 0) {
       await cliente.query(
-        "insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion) values ($1, $2, $3, now())",
+        "insert into medicamento_tienda (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion) values ($1, $2, $3, now())",
         [idTienda, r.rows[0].id_medicamento, unidadesEnRed],
       );
     }
@@ -336,9 +338,11 @@ export function repararEventos() {
 // Consolidado de stock de una tienda para un medicamento. Lo reconstruye la foto de stock; no se replica.
 export const fijarConsolidadoTienda = (idTienda, idMedicamento, cantidad) =>
   central.query(
-    `insert into inventario_consolidado (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
+    `insert into medicamento_tienda (id_tienda, id_medicamento, cantidad_disponible, fecha_sincronizacion)
      values ($1, $2, $3, now())
-     on conflict (id_tienda, id_medicamento) do update set cantidad_disponible = excluded.cantidad_disponible`,
+     on conflict (id_tienda, id_medicamento) do update
+     set cantidad_disponible = excluded.cantidad_disponible,
+         fecha_sincronizacion = coalesce(medicamento_tienda.fecha_sincronizacion, excluded.fecha_sincronizacion)`,
     [idTienda, idMedicamento, cantidad],
   );
 
@@ -350,5 +354,7 @@ export const fijarPoliticaAcceso = (intentos, minutos) =>
 export const vencerReservaReceta = (codigo) =>
   central.query("update receta_emitida set reservada_hasta = now()::timestamp - interval '1 minute' where codigo = $1", [codigo]);
 
-// Limpia el consolidado de una tienda (lo reconstruye la siguiente foto de stock). No se replica.
-export const limpiarConsolidadoTienda = (idTienda) => central.query("delete from inventario_consolidado where id_tienda = $1", [idTienda]);
+// Limpia el consolidado de una tienda (lo reconstruye la siguiente foto de stock). No se replica. Los umbrales, que viven
+// en la misma fila, se conservan.
+export const limpiarConsolidadoTienda = (idTienda) =>
+  central.query("update medicamento_tienda set cantidad_disponible = null, fecha_sincronizacion = null where id_tienda = $1", [idTienda]);

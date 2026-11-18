@@ -78,7 +78,7 @@ const ESQUEMA = `hu17_${S}`;
 const idMed = (await uno(
   central,
   `with m as (insert into medicamento (codigo_interno, nombre_comercial, principio_activo) values ($1, $2, 'prueba de traslados') returning id_medicamento),
-        u as (insert into umbral_stock (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
+        u as (insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad) select t.id_tienda, m.id_medicamento, 0, 30 from tienda t cross join m where t.activa returning 1)
    select id_medicamento from m`,
   [`HU17-${S}`.toUpperCase(), `Prueba Traslado ${S}`],
 )).id_medicamento;
@@ -148,7 +148,7 @@ try {
   ))[0].id_lote;
   await origen("stock", { ids: [idMed] });
   await origen("flush");
-  check("el central conoce el stock de la tienda origen", Number((await uno(central, "select cantidad_disponible from inventario_consolidado where id_tienda = $1 and id_medicamento = $2", [ORIGEN, idMed]))?.cantidad_disponible) === 50);
+  check("el central conoce el stock de la tienda origen", Number((await uno(central, "select cantidad_disponible from medicamento_tienda where id_tienda = $1 and id_medicamento = $2 and fecha_sincronizacion is not null", [ORIGEN, idMed]))?.cantidad_disponible) === 50);
 
   // --- Permisos y validaciones
   const ruta = "/api/local/traslados";

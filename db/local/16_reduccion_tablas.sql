@@ -97,3 +97,23 @@ BEGIN
     END IF;
     DROP TABLE empleado_ref_cuarentena;
 END $$;
+
+-- 7. umbral_stock_ref -> medicamento_ref (stock_minimo, dias_alerta_caducidad). Misma clave (id_medicamento): el nodo
+--    es de una sola tienda.
+DO $$
+DECLARE
+    v_viejas bigint;
+    v_movidas integer;
+BEGIN
+    IF to_regclass('umbral_stock_ref') IS NULL THEN
+        RETURN;
+    END IF;
+    EXECUTE 'SELECT count(*) FROM umbral_stock_ref' INTO v_viejas;
+    EXECUTE 'UPDATE medicamento_ref m SET stock_minimo = u.stock_minimo, dias_alerta_caducidad = u.dias_alerta_caducidad
+               FROM umbral_stock_ref u WHERE u.id_medicamento = m.id_medicamento';
+    GET DIAGNOSTICS v_movidas = ROW_COUNT;
+    IF v_movidas <> v_viejas THEN
+        RAISE EXCEPTION 'REDUCCION: se movieron % de % umbrales de la tienda', v_movidas, v_viejas;
+    END IF;
+    DROP TABLE umbral_stock_ref;
+END $$;
