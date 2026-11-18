@@ -13,6 +13,7 @@ export default function Proveedores({ session }) {
   const [texto, setTexto] = useState("");
   const [inactivos, setInactivos] = useState(false);
   const [lista, setLista] = useState(null);
+  const [catalogo, setCatalogo] = useState([]);
   const [version, setVersion] = useState(0);
   const [editando, setEditando] = useState(null); // null = cerrado, 0 = nuevo, id = edición
   const [error, setError] = useState("");
@@ -24,6 +25,7 @@ export default function Proveedores({ session }) {
       api(`${base}?detalle=1&q=${encodeURIComponent(texto.trim())}&incluir_inactivos=${inactivos ? 1 : 0}`, { token: session.token }).then((r) => {
         if (r.ok) {
           setLista(r.data.proveedores);
+          setCatalogo(r.data.catalogo ?? []);
           setError("");
         } else setError(mensajeError(r));
       });
@@ -38,6 +40,8 @@ export default function Proveedores({ session }) {
     setVersion((v) => v + 1);
     if (session.nodo === "local") setTimeout(() => setVersion((v) => v + 1), RELECTURA_MS);
   };
+
+  const nombreDe = (id) => catalogo.find((m) => m.id_medicamento === id)?.nombre_comercial ?? `#${id}`;
 
   async function alternarActivo(p) {
     setError("");
@@ -64,7 +68,7 @@ export default function Proveedores({ session }) {
       </div>
       {error && <div className="error">{error}</div>}
       {aviso && <div className="ok">{aviso}{session.nodo === "local" ? " Esta tienda lo recibe en la próxima sincronización (unos segundos)." : ""}</div>}
-      {editando === 0 && <FormProveedor titulo="Nuevo proveedor" ruta={base} metodo="POST" enviar={enviar} ocupado={ocupado} onListo={() => alCambiar("Proveedor registrado.")} />}
+      {editando === 0 && <FormProveedor titulo="Nuevo proveedor" ruta={base} metodo="POST" catalogo={catalogo} enviar={enviar} ocupado={ocupado} onListo={() => alCambiar("Proveedor registrado.")} />}
       {lista && lista.length === 0 && <div className="inv-vacio">No hay proveedores con ese criterio.</div>}
       <ul className="inv-lista">
         {(lista || []).map((p) => (
@@ -74,6 +78,9 @@ export default function Proveedores({ session }) {
                 <strong>{p.nombre_empresa}</strong> <span className={`pill ${p.activo ? "disponible" : "agotado"}`}>{p.activo ? "Activo" : "Inactivo"}</span>
                 <div className="muted">NIT {p.nit || "—"} · {p.telefono || "sin teléfono"} · {p.correo || "sin correo"}</div>
                 {p.direccion && <div className="muted">{p.direccion}</div>}
+                <div className="muted">
+                  {p.medicamentos?.length ? `Surte: ${p.medicamentos.map(nombreDe).join(", ")}` : "Sin medicamentos registrados"}
+                </div>
                 {p.solicitudes_abiertas > 0 && <div className="muted">{p.solicitudes_abiertas} solicitud(es) abierta(s)</div>}
               </div>
               <div className="inv-stock">
@@ -89,6 +96,7 @@ export default function Proveedores({ session }) {
                 ruta={`${base}/${p.id_proveedor}`}
                 metodo="PATCH"
                 inicial={p}
+                catalogo={catalogo}
                 enviar={enviar}
                 ocupado={ocupado}
                 onListo={() => alCambiar("Cambios guardados.")}
@@ -101,8 +109,17 @@ export default function Proveedores({ session }) {
   );
 }
 
-function FormProveedor({ titulo, ruta, metodo, inicial, enviar, ocupado, onListo }) {
+function FormProveedor({ titulo, ruta, metodo, inicial, catalogo = [], enviar, ocupado, onListo }) {
   const [form, setForm] = useState(() => Object.fromEntries(CAMPOS.map((c) => [c, inicial?.[c] ?? ""])));
+  // Medicamentos que surte el proveedor (medicamento_proveedor): al pedir desde una alerta se sugiere este proveedor.
+  const [surte, setSurte] = useState(() => new Set(inicial?.medicamentos ?? []));
+  const alternarMedicamento = (id) =>
+    setSurte((actual) => {
+      const nuevo = new Set(actual);
+      if (nuevo.has(id)) nuevo.delete(id);
+      else nuevo.add(id);
+      return nuevo;
+    });
   const [error, setError] = useState("");
   const campo = (nombre) => (e) => setForm((f) => ({ ...f, [nombre]: e.target.value }));
 
@@ -112,7 +129,7 @@ function FormProveedor({ titulo, ruta, metodo, inicial, enviar, ocupado, onListo
     if (form.nombre_empresa.trim().length < 3) return setError("El nombre de la empresa debe tener al menos 3 caracteres");
     if (!/^[0-9A-Za-z][0-9A-Za-z.\-]{4,39}$/.test(form.nit.trim())) return setError("El NIT debe tener entre 5 y 40 caracteres (letras, números, punto o guion)");
     if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo.trim())) return setError("Correo no válido");
-    const r = await enviar(ruta, metodo, form);
+    const r = await enviar(ruta, metodo, { ...form, medicamentos: [...surte] });
     if (!r.ok) return setError(mensajeError(r, { requiereCentral: true }));
     onListo(r.data);
   }
@@ -127,6 +144,19 @@ function FormProveedor({ titulo, ruta, metodo, inicial, enviar, ocupado, onListo
         <input placeholder="Correo (opcional)" type="email" value={form.correo} onChange={campo("correo")} aria-label="Correo" maxLength={120} />
         <input placeholder="Dirección (opcional)" value={form.direccion} onChange={campo("direccion")} aria-label="Dirección" maxLength={200} />
       </div>
+      {catalogo.length > 0 && (
+        <fieldset className="subform">
+          <legend>Medicamentos que surte</legend>
+          <div className="inv-filtros tres">
+            {catalogo.map((m) => (
+              <label key={m.id_medicamento} className="check">
+                <input type="checkbox" checked={surte.has(m.id_medicamento)} onChange={() => alternarMedicamento(m.id_medicamento)} />{" "}
+                {m.nombre_comercial}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
       <button className="primary" disabled={ocupado}>{ocupado ? "Guardando…" : "Guardar proveedor"}</button>
       {error && <div className="error">{error}</div>}
     </form>

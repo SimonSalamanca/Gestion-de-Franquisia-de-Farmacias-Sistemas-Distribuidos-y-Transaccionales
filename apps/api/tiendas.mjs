@@ -60,11 +60,12 @@ async function previa(client, key, hmac) {
   return { status: row.rows[0].resultado_http, body: row.rows[0].cuerpo_json };
 }
 
-async function guardar(client, key, hmac, result) {
+// idEmpleado: el administrador que ejecutó la operación (auth_operacion -> empleado).
+async function guardar(client, key, hmac, idEmpleado, result) {
   await client.query(
-    `insert into auth_operacion (idempotency_key, payload_hmac, resultado_http, cuerpo_json)
-     values ($1, $2, $3, $4::jsonb)`,
-    [key, hmac, result.status, JSON.stringify(result.body)],
+    `insert into auth_operacion (idempotency_key, payload_hmac, resultado_http, cuerpo_json, id_empleado)
+     values ($1, $2, $3, $4::jsonb, $5)`,
+    [key, hmac, result.status, JSON.stringify(result.body), idEmpleado],
   );
   return result;
 }
@@ -149,7 +150,7 @@ export async function crearTienda(token, key, body) {
       await completarUmbrales(client, { idTienda: row.id_tienda });
       await publicarUmbralesPendientes(client);
       await auditar(client, acceso.sesion.id_empleado, "TIENDA_CREAR", row.id_tienda, row.nombre);
-      return guardar(client, key, hmac, { status: 201, body: { tienda: tiendaDe(row) } });
+      return guardar(client, key, hmac, acceso.sesion.id_empleado, { status: 201, body: { tienda: tiendaDe(row) } });
     });
   } catch (error) {
     if (error.code !== "23505") throw error;
@@ -184,11 +185,11 @@ export async function editarTienda(token, key, idTienda, body) {
       [idTienda, datos.nombre, datos.direccion, datos.ciudad, datos.telefono, datos.apertura, datos.activa, version],
     );
     if (updated.rowCount === 0) {
-      return guardar(client, key, hmac, fail(409, "CONFLICTO", "La tienda cambió en otro puesto. Recargue e intente de nuevo"));
+      return guardar(client, key, hmac, acceso.sesion.id_empleado, fail(409, "CONFLICTO", "La tienda cambió en otro puesto. Recargue e intente de nuevo"));
     }
     await publicarTienda(client, updated.rows[0]);
     await auditar(client, acceso.sesion.id_empleado, "TIENDA_EDITAR", idTienda, datos.nombre);
-    return guardar(client, key, hmac, { status: 200, body: { tienda: tiendaDe(updated.rows[0]) } });
+    return guardar(client, key, hmac, acceso.sesion.id_empleado, { status: 200, body: { tienda: tiendaDe(updated.rows[0]) } });
   });
 }
 
@@ -203,12 +204,12 @@ export async function desactivarTienda(token, key, idTienda, body) {
     const ya = await previa(client, key, hmac);
     if (ya) return ya;
     const current = await client.query("select * from tienda where id_tienda = $1 for update", [idTienda]);
-    if (current.rowCount === 0) return guardar(client, key, hmac, fail(404, "TIENDA", "Tienda no existe"));
+    if (current.rowCount === 0) return guardar(client, key, hmac, acceso.sesion.id_empleado, fail(404, "TIENDA", "Tienda no existe"));
     if (Number(current.rows[0].version_tienda) !== version) {
-      return guardar(client, key, hmac, fail(409, "CONFLICTO", "La tienda cambió en otro puesto. Recargue e intente de nuevo"));
+      return guardar(client, key, hmac, acceso.sesion.id_empleado, fail(409, "CONFLICTO", "La tienda cambió en otro puesto. Recargue e intente de nuevo"));
     }
     if (current.rows[0].activa === false) {
-      return guardar(client, key, hmac, { status: 200, body: { tienda: tiendaDe(current.rows[0]) } });
+      return guardar(client, key, hmac, acceso.sesion.id_empleado, { status: 200, body: { tienda: tiendaDe(current.rows[0]) } });
     }
     const updated = await client.query(
       `update tienda set activa = false, version_tienda = version_tienda + 1
@@ -218,7 +219,7 @@ export async function desactivarTienda(token, key, idTienda, body) {
     );
     await publicarTienda(client, updated.rows[0]);
     await auditar(client, acceso.sesion.id_empleado, "TIENDA_DESACTIVAR", idTienda, updated.rows[0].nombre);
-    return guardar(client, key, hmac, { status: 200, body: { tienda: tiendaDe(updated.rows[0]) } });
+    return guardar(client, key, hmac, acceso.sesion.id_empleado, { status: 200, body: { tienda: tiendaDe(updated.rows[0]) } });
   });
 }
 
@@ -235,9 +236,9 @@ export async function guardarUmbral(token, key, idTienda, body) {
     const ya = await previa(client, key, hmac);
     if (ya) return ya;
     const tienda = await client.query("select id_tienda from tienda where id_tienda = $1", [idTienda]);
-    if (tienda.rowCount === 0) return guardar(client, key, hmac, fail(404, "TIENDA", "Tienda no existe"));
+    if (tienda.rowCount === 0) return guardar(client, key, hmac, acceso.sesion.id_empleado, fail(404, "TIENDA", "Tienda no existe"));
     const med = await client.query("select id_medicamento from medicamento where id_medicamento = $1", [idMedicamento]);
-    if (med.rowCount === 0) return guardar(client, key, hmac, fail(404, "MEDICAMENTO", "Medicamento no existe"));
+    if (med.rowCount === 0) return guardar(client, key, hmac, acceso.sesion.id_empleado, fail(404, "MEDICAMENTO", "Medicamento no existe"));
     const saved = await client.query(
       `insert into medicamento_tienda (id_tienda, id_medicamento, stock_minimo, dias_alerta_caducidad)
        values ($1, $2, $3, $4)
@@ -254,7 +255,7 @@ export async function guardarUmbral(token, key, idTienda, body) {
       JSON.stringify(saved.rows[0]),
     ]);
     await auditar(client, acceso.sesion.id_empleado, "UMBRAL_CONFIGURAR", idTienda, `med ${idMedicamento}`);
-    return guardar(client, key, hmac, { status: 200, body: { umbral: saved.rows[0] } });
+    return guardar(client, key, hmac, acceso.sesion.id_empleado, { status: 200, body: { umbral: saved.rows[0] } });
   });
 }
 

@@ -39,18 +39,8 @@ CREATE TABLE IF NOT EXISTS devolucion_pago (
     PRIMARY KEY (id_anulacion, id_metodo_pago)
 );
 
--- Consecutivo de notas sin saltos: fila NOTA de secuencia_documento (07_hu08), mismo mecanismo que las facturas.
-INSERT INTO secuencia_documento (tipo, ultimo) VALUES ('NOTA', 0) ON CONFLICT (tipo) DO NOTHING;
-
-CREATE OR REPLACE FUNCTION siguiente_numero_nota(p_tienda integer)
-RETURNS text
-LANGUAGE sql
-AS $$
-    UPDATE secuencia_documento
-       SET ultimo = ultimo + 1
-     WHERE tipo = 'NOTA'
-    RETURNING 'NC-T' || p_tienda::text || '-' || lpad(ultimo::text, 6, '0');
-$$;
+-- Consecutivo de notas sin saltos: fila NOTA de secuencia_documento, mismo mecanismo que las facturas. La función
+-- siguiente_numero_nota (NC-T{tienda}-{consecutivo}) está en 18_relaciones_b.sql.
 
 -- Las notas son permanentes: no se editan ni se borran.
 CREATE OR REPLACE FUNCTION nota_inmutable() RETURNS trigger

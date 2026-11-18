@@ -92,7 +92,7 @@ async function entradaEnLote(client, datos, ctx) {
   const existente = await client.query(
     `select id_lote, fecha_caducidad from lote
      where id_medicamento = $1 and id_proveedor = $2 and numero_lote = $3
-     for update`,
+     for no key update`,
     [datos.idMedicamento, datos.idProveedor, datos.numeroLote],
   );
   let idLote;
@@ -248,8 +248,9 @@ export async function recibirPedido(client, idPedido, body, ctx) {
     const resultado = await entradaEnLote(client, datos, { ...ctx, referencia, publicarStock: false });
     lotes.push(resultado.id_lote);
     await client.query(
-      `insert into detalle_recepcion (id_recepcion, id_medicamento, id_lote, id_proveedor, cantidad) values ($1, $2, $3, $4, $5)`,
-      [idRecepcion, datos.idMedicamento, resultado.id_lote, idProveedor, datos.cantidad],
+      // El medicamento y el proveedor de la línea son los de su lote (sin dato repetido).
+      `insert into detalle_recepcion (id_recepcion, id_lote, cantidad) values ($1, $2, $3)`,
+      [idRecepcion, resultado.id_lote, datos.cantidad],
     );
   }
   // Cantidades recibidas de todas las líneas en una sola sentencia (varias líneas pueden ser del mismo medicamento).
@@ -353,15 +354,15 @@ export async function listarRecepciones(db, idPedido) {
   const recepciones = await db.query(
     `select r.id_recepcion, r.fecha_hora, r.documento_proveedor, r.observaciones, e.nombre_completo as responsable, e.usuario,
             coalesce(json_agg(json_build_object(
-              'id_medicamento', d.id_medicamento, 'nombre_comercial', m.nombre_comercial, 'id_lote', d.id_lote,
+              'id_medicamento', l.id_medicamento, 'nombre_comercial', m.nombre_comercial, 'id_lote', d.id_lote,
               'numero_lote', l.numero_lote, 'fecha_caducidad', l.fecha_caducidad, 'cantidad', d.cantidad,
-              'id_proveedor', d.id_proveedor
+              'id_proveedor', l.id_proveedor
             ) order by m.nombre_comercial, d.id_detalle) filter (where d.id_detalle is not null), '[]') as lineas
      from recepcion r
      join empleado_ref e on e.id_empleado = r.id_empleado
      left join detalle_recepcion d on d.id_recepcion = r.id_recepcion
-     left join medicamento_ref m on m.id_medicamento = d.id_medicamento
      left join lote l on l.id_lote = d.id_lote
+     left join medicamento_ref m on m.id_medicamento = l.id_medicamento
      where r.id_pedido = $1
      group by r.id_recepcion, e.nombre_completo, e.usuario
      order by r.fecha_hora, r.id_recepcion`,

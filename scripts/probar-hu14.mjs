@@ -138,7 +138,7 @@ try {
   check("un movimiento ENTRADA ligado al pedido", mov.length === 1 && mov[0].tipo_movimiento === "ENTRADA" && mov[0].cantidad === 30 && mov[0].referencia_documento === `PEDIDO-${idPedido}` && mov[0].id_empleado === idAdmin);
   const rec = (await local.query("select id_pedido, id_empleado, fecha_hora, documento_proveedor from recepcion where id_recepcion = $1", [idRec1])).rows[0];
   check("la recepción queda vinculada a la solicitud original", rec.id_pedido === idPedido && rec.id_empleado === idAdmin && rec.documento_proveedor === `REM-${S}`);
-  const det = (await local.query("select id_medicamento, id_lote, id_proveedor, cantidad from detalle_recepcion where id_recepcion = $1", [idRec1])).rows;
+  const det = (await local.query("select l.id_medicamento, d.id_lote, l.id_proveedor, d.cantidad from detalle_recepcion d join lote l on l.id_lote = d.id_lote where d.id_recepcion = $1", [idRec1])).rows;
   check("el detalle liga medicamento, lote y proveedor", det.length === 1 && det[0].id_medicamento === idA && det[0].id_lote === lote.id_lote && det[0].id_proveedor === idProv && det[0].cantidad === 30);
   check("el stock vendible del medicamento sube", (await contar(local, "select coalesce(sum(cantidad_disponible), 0) as n from lote where id_medicamento = $1 and estado = 'DISPONIBLE'", [idA])) === 30);
   const aud = (await local.query("select id_empleado, fecha_hora, detalle from registro_actividad where accion = 'PEDIDO_RECIBIR' and id_entidad_afectada = $1 order by id_registro", [idPedido])).rows;

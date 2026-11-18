@@ -55,24 +55,31 @@ async function asegurarTiendas(client, p) {
   }
 }
 
+// El traslado lleva un solo medicamento (traslado_local.id_medicamento y cantidad). Sin `items` (la compensación) solo
+// cambia el estado de un traslado que ya está guardado.
 async function guardarTraslado(client, p, rol, estadoLocal, { estadoRed = null, motivo = null } = {}) {
+  const motivoCorto = motivo ? String(motivo).slice(0, 300) : null;
+  const item = p.items?.[0];
+  if (!item) {
+    await client.query(
+      `update traslado_local
+          set estado_local = $3, estado_red = coalesce($4, estado_red), motivo = coalesce($5, motivo), actualizado_en = now()
+        where id_traslado = $1 and rol_tienda = $2`,
+      [p.id_traslado, rol, estadoLocal, estadoRed, motivoCorto],
+    );
+    return;
+  }
   await client.query(
-    `insert into traslado_local (id_traslado, rol_tienda, id_tienda_origen, id_tienda_destino, estado_local, estado_red, motivo, solicitante, actualizado_en)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, now())
+    `insert into traslado_local (id_traslado, rol_tienda, id_tienda_origen, id_tienda_destino, estado_local, estado_red, motivo, solicitante,
+                                 actualizado_en, id_medicamento, cantidad)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9, $10)
      on conflict (id_traslado, rol_tienda) do update
      set estado_local = excluded.estado_local,
          estado_red = coalesce(excluded.estado_red, traslado_local.estado_red),
          motivo = coalesce(excluded.motivo, traslado_local.motivo),
          actualizado_en = now()`,
-    [p.id_traslado, rol, p.id_tienda_origen, p.id_tienda_destino, estadoLocal, estadoRed, motivo ? String(motivo).slice(0, 300) : null, p.solicitante ?? null],
+    [p.id_traslado, rol, p.id_tienda_origen, p.id_tienda_destino, estadoLocal, estadoRed, motivoCorto, p.solicitante ?? null, item.id_medicamento, item.cantidad],
   );
-  for (const item of p.items ?? []) {
-    await client.query(
-      `insert into detalle_traslado_local (id_traslado, rol_tienda, id_medicamento, cantidad) values ($1, $2, $3, $4)
-       on conflict (id_traslado, rol_tienda, id_medicamento) do nothing`,
-      [p.id_traslado, rol, item.id_medicamento, item.cantidad],
-    );
-  }
 }
 
 const estadoLocalDe = async (client, idTraslado, rol) =>
@@ -113,7 +120,7 @@ async function descontar(client, event, idTienda) {
           `select l.id_lote, l.numero_lote, l.fecha_caducidad::text as fecha_caducidad, l.id_proveedor, l.cantidad_disponible, m.nombre_comercial
            from lote l join medicamento_ref m on m.id_medicamento = l.id_medicamento
            where l.id_medicamento = $1 and l.estado = 'DISPONIBLE' and l.fecha_caducidad >= current_date and l.cantidad_disponible > 0
-           order by l.id_lote for update of l`,
+           order by l.id_lote for no key update of l`,
           [item.id_medicamento],
         );
         const disponible = lotes.rows.reduce((s, l) => s + Number(l.cantidad_disponible), 0);
@@ -181,7 +188,7 @@ async function ingresar(client, event, idTienda) {
           const vencido = await client.query("select $1::date < current_date as v", [l.fecha_caducidad]);
           if (vencido.rows[0].v) throw conflicto("LOTE_VENCIDO", `El lote ${l.numero_lote} venció (${l.fecha_caducidad})`);
           const existente = await client.query(
-            "select id_lote, fecha_caducidad from lote where id_medicamento = $1 and id_proveedor = $2 and numero_lote = $3 for update",
+            "select id_lote, fecha_caducidad from lote where id_medicamento = $1 and id_proveedor = $2 and numero_lote = $3 for no key update",
             [item.id_medicamento, l.id_proveedor, l.numero_lote],
           );
           let idLote;
@@ -318,14 +325,11 @@ export async function listarTrasladosLocales(db) {
   const r = await db.query(
     `select t.id_traslado, t.rol_tienda, t.id_tienda_origen, o.nombre as tienda_origen, t.id_tienda_destino, d.nombre as tienda_destino,
             t.estado_local, t.estado_red, t.motivo, t.solicitante, t.fecha_hora, t.actualizado_en,
-            coalesce(json_agg(json_build_object('id_medicamento', x.id_medicamento, 'nombre_comercial', m.nombre_comercial, 'cantidad', x.cantidad))
-                     filter (where x.id_medicamento is not null), '[]') as items
+            json_build_array(json_build_object('id_medicamento', t.id_medicamento, 'nombre_comercial', m.nombre_comercial, 'cantidad', t.cantidad)) as items
      from traslado_local t
      join tienda_ref o on o.id_tienda = t.id_tienda_origen
      join tienda_ref d on d.id_tienda = t.id_tienda_destino
-     left join detalle_traslado_local x on x.id_traslado = t.id_traslado and x.rol_tienda = t.rol_tienda
-     left join medicamento_ref m on m.id_medicamento = x.id_medicamento
-     group by t.id_traslado, t.rol_tienda, o.nombre, d.nombre
+     left join medicamento_ref m on m.id_medicamento = t.id_medicamento
      order by t.fecha_hora desc, t.id_traslado desc
      limit 100`,
   );

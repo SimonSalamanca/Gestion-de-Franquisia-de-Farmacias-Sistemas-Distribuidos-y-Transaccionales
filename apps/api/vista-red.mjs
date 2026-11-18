@@ -228,8 +228,10 @@ export async function inventarioRed(query, db = central) {
 }
 
 export async function listarCategoriasRed(db = central) {
-  const filas = await db.query("select id_categoria, nombre from categoria order by nombre");
-  return { categorias: [...filas.rows, { id_categoria: 0, nombre: "Sin categoría" }] };
+  // "Sin categoría" (id 0) es una fila del catálogo (18_relaciones_b.sql): agrupa en la consolidación los medicamentos
+  // sin categoría. Va al final de la lista.
+  const filas = await db.query("select id_categoria, nombre from categoria order by id_categoria = 0, nombre");
+  return { categorias: filas.rows };
 }
 
 export async function listarTiendasRed(db = central) {

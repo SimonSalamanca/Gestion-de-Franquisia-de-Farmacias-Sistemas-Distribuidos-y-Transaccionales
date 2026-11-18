@@ -100,9 +100,8 @@ CREATE TABLE IF NOT EXISTS cursor_sync (
     ultimo_ack_en timestamp with time zone
 );
 
-INSERT INTO cursor_sync (id_tienda)
-VALUES (1)
-ON CONFLICT (id_tienda) DO NOTHING;
+-- La fila del cursor la crea el arranque con la tienda del nodo (LOCAL_TIENDA_ID, migrate.mjs), después de asegurar su
+-- fila en tienda_ref (cursor_sync -> tienda_ref, 18_relaciones_b.sql). Antes se sembraba aquí siempre la tienda 1.
 
 -- Parámetros del nodo en una sola fila (id = 1). Aquí los de acceso; 05_hu12 y 06_hu12 agregan los de recetas.
 -- (Antes politica_acceso y politica_receta; 16_reduccion_tablas.sql mueve sus valores y las elimina.)

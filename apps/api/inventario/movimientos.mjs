@@ -45,7 +45,7 @@ export async function registrarMovimiento(
   const result = await client.query(
     `select id_lote, id_medicamento, numero_lote, cantidad_disponible, estado,
             fecha_caducidad < current_date as vencido
-     from lote where id_lote = $1 for update`,
+     from lote where id_lote = $1 for no key update`,
     [idLote],
   );
   if (result.rowCount === 0) throw noEncontrado(`El lote ${idLote} no existe`);

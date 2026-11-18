@@ -32,20 +32,9 @@ CREATE TABLE IF NOT EXISTS secuencia_documento (
     CONSTRAINT secuencia_documento_tipo_check CHECK (tipo IN ('FACTURA', 'NOTA'))
 );
 
-INSERT INTO secuencia_documento (tipo, ultimo)
-VALUES ('FACTURA', 0)
-ON CONFLICT (tipo) DO NOTHING;
-
--- Número de factura único por tienda y por red: T{tienda}-{consecutivo de 6 dígitos}.
-CREATE OR REPLACE FUNCTION siguiente_numero_factura(p_tienda integer)
-RETURNS text
-LANGUAGE sql
-AS $$
-    UPDATE secuencia_documento
-       SET ultimo = ultimo + 1
-     WHERE tipo = 'FACTURA'
-    RETURNING 'T' || p_tienda::text || '-' || lpad(ultimo::text, 6, '0');
-$$;
+-- La numeración es de la tienda (secuencia_documento -> tienda_ref, llave (id_tienda, tipo)): la columna, la llave y la
+-- función siguiente_numero_factura (T{tienda}-{consecutivo de 6 dígitos}) están en 18_relaciones_b.sql. La fila de cada
+-- tipo la crea la función con el primer documento.
 
 -- Garantía en la base, al hacer commit (RNF-12, criterios 3 y 4): una factura solo existe completa. Sus líneas suman
 -- el subtotal y el impuesto, los pagos suman el total, y cada línea tiene su movimiento de venta en inventario por la

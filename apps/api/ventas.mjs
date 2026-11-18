@@ -72,7 +72,7 @@ function validarLineas(lineas) {
 }
 
 // Calcula la venta: precio vigente en este instante, lotes por FEFO, impuesto por línea de lote y totales.
-// bloquear = true (la venta) toma FOR UPDATE de los lotes candidatos; false (la vista previa) solo lee.
+// bloquear = true (la venta) toma FOR NO KEY UPDATE de los lotes candidatos (bloquea otras ventas del lote sin chocar con las llaves que lo referencian); false (la vista previa) solo lee.
 // Los problemas no lanzan: la vista previa los informa y la venta lanza el primero.
 async function planear(db, lineas, { bloquear }) {
   const ids = lineas.map((l) => l.id_medicamento);
@@ -86,7 +86,7 @@ async function planear(db, lineas, { bloquear }) {
     `select id_lote, id_medicamento, numero_lote, cantidad_disponible, fecha_caducidad
      from lote
      where id_medicamento = any($1::int[]) and estado = 'DISPONIBLE' and fecha_caducidad >= current_date and cantidad_disponible > 0
-     order by id_lote ${bloquear ? "for update" : ""}`,
+     order by id_lote ${bloquear ? "for no key update" : ""}`,
     [ids],
   );
   const porMedicamento = new Map(info.rows.map((m) => [m.id_medicamento, m]));
@@ -240,8 +240,8 @@ export async function registrarVenta(sesion, key, body) {
     // 0. HU-11: con la caja cerrada no se vende. FOR SHARE: el cierre (FOR UPDATE) espera a las ventas en curso y, una vez
     //    cerrada la caja, esta consulta ya la ve cerrada. Es lo primero que hace la venta, antes de bloquear lotes. El trigger
     //    factura_periodo_caja de la base lo garantiza para cualquier otro camino.
-    const caja = await client.query("select abierta from caja_control where id = 1 for share");
-    if (!caja.rows[0]?.abierta) {
+    const caja = await client.query("select estado from periodo_caja where estado <> 'CERRADO' for share");
+    if (caja.rows[0]?.estado !== "ABIERTO") {
       throw new ErrorNegocio(409, "CAJA_CERRADA", "La caja está cerrada: un administrador debe abrir un nuevo periodo para registrar ventas");
     }
 
