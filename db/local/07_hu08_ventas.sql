@@ -22,26 +22,28 @@ BEGIN
     END IF;
 END $$;
 
--- Consecutivo de facturas de la tienda, sin saltos: el contador sube dentro de la transacción de la venta, así que
--- si la venta se revierte el número no se consume. La fila la bloquea la venta hasta su commit (serializa los números).
-CREATE TABLE IF NOT EXISTS secuencia_factura (
-    id integer PRIMARY KEY,
+-- Consecutivos de documentos de la tienda, sin saltos, una fila por tipo (FACTURA aquí; NOTA en 10_hu10). El contador
+-- sube dentro de la transacción del documento, así que si se revierte el número no se consume. La fila la bloquea la
+-- venta hasta su commit (serializa los números); cada tipo tiene su propia fila, así que facturas y notas no se esperan.
+-- (Antes secuencia_factura y secuencia_nota; 16_reduccion_tablas.sql las fusiona.)
+CREATE TABLE IF NOT EXISTS secuencia_documento (
+    tipo character varying(10) PRIMARY KEY,
     ultimo bigint NOT NULL DEFAULT 0,
-    CONSTRAINT secuencia_factura_id_check CHECK (id = 1)
+    CONSTRAINT secuencia_documento_tipo_check CHECK (tipo IN ('FACTURA', 'NOTA'))
 );
 
-INSERT INTO secuencia_factura (id, ultimo)
-VALUES (1, 0)
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO secuencia_documento (tipo, ultimo)
+VALUES ('FACTURA', 0)
+ON CONFLICT (tipo) DO NOTHING;
 
 -- Número de factura único por tienda y por red: T{tienda}-{consecutivo de 6 dígitos}.
 CREATE OR REPLACE FUNCTION siguiente_numero_factura(p_tienda integer)
 RETURNS text
 LANGUAGE sql
 AS $$
-    UPDATE secuencia_factura
+    UPDATE secuencia_documento
        SET ultimo = ultimo + 1
-     WHERE id = 1
+     WHERE tipo = 'FACTURA'
     RETURNING 'T' || p_tienda::text || '-' || lpad(ultimo::text, 6, '0');
 $$;
 

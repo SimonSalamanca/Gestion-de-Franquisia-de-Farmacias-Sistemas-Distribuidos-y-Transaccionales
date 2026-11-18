@@ -54,7 +54,7 @@ async function exigir(token, permiso) {
 }
 
 async function previa(client, key, hmac) {
-  const row = await client.query("select * from tienda_operacion where idempotency_key = $1", [key]);
+  const row = await client.query("select * from auth_operacion where idempotency_key = $1", [key]);
   if (row.rowCount === 0) return null;
   if (row.rows[0].payload_hmac !== hmac) return fail(409, "IDEMPOTENCY_CONFLICT", "La clave ya se usó con otros datos");
   return { status: row.rows[0].resultado_http, body: row.rows[0].cuerpo_json };
@@ -62,7 +62,7 @@ async function previa(client, key, hmac) {
 
 async function guardar(client, key, hmac, result) {
   await client.query(
-    `insert into tienda_operacion (idempotency_key, payload_hmac, resultado_http, cuerpo_json)
+    `insert into auth_operacion (idempotency_key, payload_hmac, resultado_http, cuerpo_json)
      values ($1, $2, $3, $4::jsonb)`,
     [key, hmac, result.status, JSON.stringify(result.body)],
   );
@@ -153,7 +153,7 @@ export async function crearTienda(token, key, body) {
     });
   } catch (error) {
     if (error.code !== "23505") throw error;
-    const prev = await central.query("select * from tienda_operacion where idempotency_key = $1", [key]);
+    const prev = await central.query("select * from auth_operacion where idempotency_key = $1", [key]);
     if (prev.rowCount === 0 || prev.rows[0].payload_hmac !== hmac) {
       return fail(409, "IDEMPOTENCY_CONFLICT", "La clave ya se usó con otros datos");
     }

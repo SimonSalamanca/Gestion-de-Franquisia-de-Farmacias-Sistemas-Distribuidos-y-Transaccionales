@@ -165,9 +165,9 @@ async function fallosLocales(client, idEmpleado, epoch, intentosCanon) {
 
 async function politicaDe(client) {
   const result = await client.query(
-    "select intentos_maximos, minutos_bloqueo from politica_acceso where id = 1",
+    "select intentos_maximos, minutos_bloqueo from politica_sistema where id = 1",
   );
-  if (result.rowCount !== 1) throw Object.assign(new Error("politica_acceso"), { status: 500 });
+  if (result.rowCount !== 1) throw Object.assign(new Error("politica_sistema"), { status: 500 });
   return {
     intentos: Number(result.rows[0].intentos_maximos),
     minutos: Number(result.rows[0].minutos_bloqueo),

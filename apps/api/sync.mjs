@@ -133,7 +133,7 @@ async function aplicarLote(idTienda, seen) {
       seen = Number(event.id_evento);
     }
     await client.query(
-      `insert into replica_cursor (id_tienda, ultimo_evento_visto, ultimo_ack_en)
+      `insert into cursor_sync (id_tienda, ultimo_evento_visto, ultimo_ack_en)
        values ($1, $2, now())
        on conflict (id_tienda) do update
        set ultimo_evento_visto = excluded.ultimo_evento_visto, ultimo_ack_en = now()`,
@@ -152,7 +152,7 @@ async function aplicarLote(idTienda, seen) {
 
 export async function pullReplica(idTienda = runtime.tiendaId) {
   if (!centralAlcanzable()) return { applied: 0, skipped: true };
-  const cursor = await local.query("select ultimo_evento_visto from replica_cursor where id_tienda = $1", [idTienda]);
+  const cursor = await local.query("select ultimo_evento_visto from cursor_sync where id_tienda = $1", [idTienda]);
   let seen = Number(cursor.rows[0]?.ultimo_evento_visto || 0);
   let applied = 0;
   for (let lote = 0; lote < MAX_LOTES; lote += 1) {

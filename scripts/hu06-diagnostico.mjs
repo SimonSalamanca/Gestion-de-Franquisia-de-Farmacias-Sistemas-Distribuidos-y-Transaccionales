@@ -18,7 +18,7 @@ const conflicto = await local.query("select * from sync_conflicto order by id_co
 const outbox = await local.query(
   "select id_outbox, id_empleado, tipo_evento, estado, intentos, payload->>'epoch_observado' as epoch_obs, idempotency_key from outbox_sync order by id_outbox desc limit 12",
 );
-const cursor = await local.query("select * from replica_cursor");
+const cursor = await local.query("select * from cursor_sync");
 
 console.log("CENTRAL control_acceso", JSON.stringify(c.rows, null, 1));
 console.log("CANONICO", JSON.stringify(canon.rows, null, 1));

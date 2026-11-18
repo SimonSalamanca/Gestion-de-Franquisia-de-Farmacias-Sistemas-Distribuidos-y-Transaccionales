@@ -28,7 +28,7 @@ function check(nombre, ok, detalle = "") {
 await migrate();
 // Estas pruebas cubren la receta registrada a mano (la garantía de la base y la protección del paciente). Con la validación
 // contra el central, ese camino está apagado por política: se enciende solo durante la corrida (ver probar-hu12-central).
-await local.query("update politica_receta set permitir_registro_manual = true where id = 1");
+await local.query("update politica_sistema set permitir_registro_manual = true where id = 1");
 link.estado = "online";
 link.openedUntil = 0;
 await pullReplica();
@@ -292,7 +292,7 @@ try {
   }
   check("tras la concurrencia la receta sigue intacta", (await contar("select cantidad_dispensada as n from receta_medicamento where id_receta = $1 and id_medicamento = $2", [idA, idControlado])) === 0);
 } finally {
-  await local.query("update politica_receta set permitir_registro_manual = false where id = 1");
+  await local.query("update politica_sistema set permitir_registro_manual = false where id = 1");
   link.estado = "online";
   server.close();
 }

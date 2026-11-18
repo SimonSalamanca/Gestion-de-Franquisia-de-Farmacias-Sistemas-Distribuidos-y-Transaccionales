@@ -135,16 +135,18 @@ JOIN permiso p ON (
 )
 ON CONFLICT DO NOTHING;
 
-CREATE TABLE IF NOT EXISTS politica_acceso (
+-- Parámetros del nodo en una sola fila (id = 1). Aquí los de acceso; 07_hu12 agrega los de recetas.
+-- (Antes politica_acceso y politica_receta; 16_reduccion_tablas.sql mueve sus valores y las elimina.)
+CREATE TABLE IF NOT EXISTS politica_sistema (
     id integer PRIMARY KEY,
     intentos_maximos integer NOT NULL,
     minutos_bloqueo integer NOT NULL,
-    CONSTRAINT politica_acceso_id_check CHECK (id = 1),
-    CONSTRAINT politica_acceso_intentos_check CHECK (intentos_maximos > 0),
-    CONSTRAINT politica_acceso_minutos_check CHECK (minutos_bloqueo > 0)
+    CONSTRAINT politica_sistema_id_check CHECK (id = 1),
+    CONSTRAINT politica_sistema_intentos_check CHECK (intentos_maximos > 0),
+    CONSTRAINT politica_sistema_minutos_check CHECK (minutos_bloqueo > 0)
 );
 
-INSERT INTO politica_acceso (id, intentos_maximos, minutos_bloqueo)
+INSERT INTO politica_sistema (id, intentos_maximos, minutos_bloqueo)
 VALUES (1, 5, 15)
 ON CONFLICT (id) DO NOTHING;
 
@@ -253,9 +255,9 @@ BEGIN
     END IF;
 
     SELECT intentos_maximos, minutos_bloqueo INTO v_max, v_min
-    FROM politica_acceso WHERE id = 1;
+    FROM politica_sistema WHERE id = 1;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'politica_acceso ausente';
+        RAISE EXCEPTION 'politica_sistema ausente';
     END IF;
 
     v_emp := (p_payload ->> 'id_empleado')::integer;

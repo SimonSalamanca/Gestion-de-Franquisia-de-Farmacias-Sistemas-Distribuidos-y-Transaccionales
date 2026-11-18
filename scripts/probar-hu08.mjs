@@ -101,7 +101,7 @@ const loteC = await crearLote(idC, "C1", { cantidad: 20, dias: 200 });
 const loteE = await crearLote(idE, "E1", { cantidad: 30, dias: 200 });
 const loteF = await crearLote(idF, "F1", { cantidad: 30, dias: 200 });
 const stock = async (idLote) => (await local.query("select cantidad_disponible::int as n from lote where id_lote = $1", [idLote])).rows[0].n;
-const ultimoNumero = async () => Number((await local.query("select ultimo from secuencia_factura where id = 1")).rows[0].ultimo);
+const ultimoNumero = async () => Number((await local.query("select ultimo from secuencia_documento where tipo = 'FACTURA'")).rows[0].ultimo);
 const facturas = () => contar(local, "select count(*) as n from factura");
 const movimientosVenta = () => contar(local, "select count(*) as n from movimiento_inventario where tipo_movimiento = 'VENTA'");
 const colaVentas = () => contar(local, "select count(*) as n from outbox_sync where tipo_evento = 'VENTA_REGISTRADA'");

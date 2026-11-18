@@ -22,9 +22,9 @@ CREATE OR REPLACE TRIGGER registro_actividad_sin_truncate
 
 CREATE INDEX IF NOT EXISTS idx_registro_actividad_fecha ON registro_actividad (fecha_hora);
 
--- Hasta qué id_registro ya subió la auditoría de esta tienda a auditoria_tienda del central.
-CREATE TABLE IF NOT EXISTS auditoria_cursor (
-    id_tienda integer PRIMARY KEY,
-    ultimo_registro_enviado integer NOT NULL DEFAULT 0,
-    enviado_en timestamp with time zone
-);
+-- Hasta qué id_registro ya subió la auditoría de esta tienda al central: columnas del cursor de la tienda (cursor_sync,
+-- 01_hu06). Antes era la tabla auditoria_cursor, que 16_reduccion_tablas.sql fusiona.
+ALTER TABLE cursor_sync
+    ADD COLUMN IF NOT EXISTS ultimo_registro_enviado integer NOT NULL DEFAULT 0;
+ALTER TABLE cursor_sync
+    ADD COLUMN IF NOT EXISTS auditoria_enviada_en timestamp with time zone;

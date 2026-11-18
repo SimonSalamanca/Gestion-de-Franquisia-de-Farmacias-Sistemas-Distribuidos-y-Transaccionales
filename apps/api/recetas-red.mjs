@@ -15,7 +15,7 @@ import { abrirDocumento, sellarDocumento } from "./datos-personales.mjs";
 //
 // Sin conexión con el central no se valida un controlado nuevo (503 SIN_CONEXION): una receta no se puede
 // reclamar dos veces si nadie puede verificar que no fue reclamada. Lo que ya está reservado sigue valiendo hasta
-// que termina su reserva (plazo en politica_receta del central), porque la reserva ya garantiza que ninguna otra
+// que termina su reserva (plazo en politica_sistema del central), porque la reserva ya garantiza que ninguna otra
 // tienda la use. La baja viaja por el outbox y es idempotente; si llega una baja de una receta que otra tienda ya
 // reclamó, no se descarta: queda en receta_conflicto.
 
@@ -213,7 +213,7 @@ export async function reservarEnCentral(client, { idTienda, idEmpleado, codigo }
   if (r.estado === "ANULADA") throw conflicto("RECETA_ANULADA", `La receta ${codigo} fue anulada`);
   if (r.estado === "RECLAMADA") throw reclamada(r);
   if (!r.vigente) {
-    const dias = (await client.query("select dias_vigencia from politica_receta where id = 1")).rows[0].dias_vigencia;
+    const dias = (await client.query("select dias_vigencia from politica_sistema where id = 1")).rows[0].dias_vigencia;
     throw conflicto("RECETA_VENCIDA", `La receta ${codigo} está vencida: solo vale ${dias} días desde su emisión`);
   }
   if (r.estado === "RESERVADA" && r.reserva_activa && Number(r.id_tienda_reserva) !== Number(idTienda)) {
@@ -222,7 +222,7 @@ export async function reservarEnCentral(client, { idTienda, idEmpleado, codigo }
   const reserva = await client.query(
     `update receta_emitida
      set estado = 'RESERVADA', id_tienda_reserva = $2, id_empleado_reserva = $3,
-         reservada_hasta = now()::timestamp + make_interval(mins => (select minutos_reserva from politica_receta where id = 1))
+         reservada_hasta = now()::timestamp + make_interval(mins => (select minutos_reserva from politica_sistema where id = 1))
      where id_receta_emitida = $1 returning reservada_hasta`,
     [r.id_receta_emitida, idTienda, idEmpleado],
   );
@@ -308,7 +308,7 @@ export async function aplicarBajaReceta(client, idTienda, event) {
 // ---------------------------------------------------------------------------------------------------------------
 
 export async function politicaReceta() {
-  const r = await local.query("select dias_vigencia, permitir_registro_manual from politica_receta where id = 1");
+  const r = await local.query("select dias_vigencia, permitir_registro_manual from politica_sistema where id = 1");
   return { dias_vigencia: r.rows[0].dias_vigencia, registro_manual: r.rows[0].permitir_registro_manual };
 }
 

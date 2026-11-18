@@ -340,19 +340,22 @@ async function asegurarUsuarioUnico() {
       [dup.usuario, keep],
     );
     for (const row of extras.rows) {
+      // La fila apartada queda como anomalía de sincronización ya resuelta (antes en empleado_ref_cuarentena).
       await local.query(
-        `insert into empleado_ref_cuarentena (
-           id_empleado, id_rol, id_tienda, nombre_completo, usuario, activo, contrasena_hash, version_credencial, motivo
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, 'duplicado de usuario')`,
+        `insert into sync_conflicto (id_empleado, tipo, detalle, payload, resuelto)
+         values ($1, 'EMPLEADO_CUARENTENA', 'duplicado de usuario', $2::jsonb, true)`,
         [
           row.id_empleado,
-          row.id_rol,
-          row.id_tienda,
-          row.nombre_completo,
-          row.usuario,
-          row.activo,
-          row.contrasena_hash,
-          row.version_credencial,
+          JSON.stringify({
+            id_empleado: row.id_empleado,
+            id_rol: row.id_rol,
+            id_tienda: row.id_tienda,
+            nombre_completo: row.nombre_completo,
+            usuario: row.usuario,
+            activo: row.activo,
+            contrasena_hash: row.contrasena_hash,
+            version_credencial: row.version_credencial,
+          }),
         ],
       );
       await local.query("delete from sesion_activa where id_empleado = $1", [row.id_empleado]);
@@ -459,7 +462,7 @@ async function centralTienda(idTienda) {
 
 async function localCursor(idTienda) {
   await NODOS.local.pool.query(
-    "insert into replica_cursor (id_tienda) values ($1) on conflict (id_tienda) do nothing",
+    "insert into cursor_sync (id_tienda) values ($1) on conflict (id_tienda) do nothing",
     [idTienda],
   );
 }

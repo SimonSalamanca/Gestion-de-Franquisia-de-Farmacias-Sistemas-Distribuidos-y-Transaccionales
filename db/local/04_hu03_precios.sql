@@ -2,7 +2,8 @@
 
 -- Copia del historial de red (precio_medicamento del central), incluidos los precios programados: así la
 -- tienda aplica un precio nuevo en su instante exacto aunque esté sin conexión, y consulta el historial offline.
--- precio_vigente_ref (script base) guarda un solo precio por medicamento y no sirve para programar: no se usa.
+-- precio_vigente_ref (script base) guardaba un solo precio por medicamento y no servía para programar: la reemplaza esta
+-- tabla con la función precio_vigente(), y 16_reduccion_tablas.sql la elimina.
 CREATE TABLE IF NOT EXISTS precio_ref (
     id_precio integer PRIMARY KEY,
     id_medicamento integer NOT NULL REFERENCES medicamento_ref (id_medicamento),

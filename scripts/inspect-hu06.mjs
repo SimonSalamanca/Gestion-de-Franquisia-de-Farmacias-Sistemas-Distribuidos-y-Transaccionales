@@ -25,7 +25,7 @@ const idx = await local.query("select indexname, indexdef from pg_indexes where 
 console.log("idx", idx.rows);
 const ca = await local.query("select * from control_acceso");
 console.log("local control", ca.rows);
-const cur = await local.query("select * from replica_cursor");
+const cur = await local.query("select * from cursor_sync");
 console.log("cursor", cur.rows);
 const emp = await local.query("select id_empleado, id_tienda, usuario, version_credencial from empleado_ref");
 console.log("local emp", emp.rows);

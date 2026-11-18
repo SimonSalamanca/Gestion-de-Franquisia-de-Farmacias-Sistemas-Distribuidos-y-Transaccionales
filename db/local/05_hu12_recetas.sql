@@ -14,17 +14,11 @@ ALTER TABLE receta_medicamento
 CREATE INDEX IF NOT EXISTS idx_receta_cliente ON receta (id_cliente);
 CREATE INDEX IF NOT EXISTS idx_detalle_factura_receta ON detalle_factura (id_receta) WHERE id_receta IS NOT NULL;
 
--- Días que una receta sirve desde su fecha de emisión. Es un dato, no código: se ajusta con un UPDATE.
-CREATE TABLE IF NOT EXISTS politica_receta (
-    id integer PRIMARY KEY,
-    dias_vigencia integer NOT NULL,
-    CONSTRAINT politica_receta_id_check CHECK (id = 1),
-    CONSTRAINT politica_receta_dias_check CHECK (dias_vigencia > 0)
-);
-
-INSERT INTO politica_receta (id, dias_vigencia)
-VALUES (1, 30)
-ON CONFLICT (id) DO NOTHING;
+-- Días que una receta sirve desde su fecha de emisión. Es un dato, no código: se ajusta con un UPDATE. Vive en la fila
+-- única de politica_sistema (01_hu06); antes en politica_receta, que 16_reduccion_tablas.sql fusiona.
+ALTER TABLE politica_sistema
+    ADD COLUMN IF NOT EXISTS dias_vigencia integer NOT NULL DEFAULT 30
+        CONSTRAINT politica_sistema_dias_check CHECK (dias_vigencia > 0);
 
 -- Una receta sirve si ya fue emitida y no pasó su vigencia. La fecha de hoy la decide la base, no el reloj del API.
 CREATE OR REPLACE FUNCTION receta_vigente(p_fecha_emision date)
@@ -33,7 +27,7 @@ LANGUAGE sql
 STABLE
 AS $$
     SELECT p_fecha_emision <= current_date
-       AND current_date - p_fecha_emision <= (SELECT dias_vigencia FROM politica_receta WHERE id = 1);
+       AND current_date - p_fecha_emision <= (SELECT dias_vigencia FROM politica_sistema WHERE id = 1);
 $$;
 
 -- Los datos de la receta son parte del historial de auditoría: no se editan ni se borran. Lo único que cambia

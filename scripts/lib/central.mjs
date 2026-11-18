@@ -344,7 +344,7 @@ export const fijarConsolidadoTienda = (idTienda, idMedicamento, cantidad) =>
 
 // Política de intentos de acceso: vive solo en el central.
 export const fijarPoliticaAcceso = (intentos, minutos) =>
-  central.query("update politica_acceso set intentos_maximos = $1, minutos_bloqueo = $2 where id = 1", [intentos, minutos]);
+  central.query("update politica_sistema set intentos_maximos = $1, minutos_bloqueo = $2 where id = 1", [intentos, minutos]);
 
 // Hace vencer una reserva de receta (simula el paso del tiempo). La reserva vive solo en el central.
 export const vencerReservaReceta = (codigo) =>

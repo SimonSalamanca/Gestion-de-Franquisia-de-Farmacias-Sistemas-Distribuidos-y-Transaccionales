@@ -17,7 +17,7 @@ ALTER TABLE receta
 CREATE UNIQUE INDEX IF NOT EXISTS uq_receta_codigo ON receta (codigo_receta) WHERE codigo_receta IS NOT NULL;
 
 -- El registro manual (sin pasar por el central) queda apagado: solo para recetas que no están en el sistema.
-ALTER TABLE politica_receta
+ALTER TABLE politica_sistema
     ADD COLUMN IF NOT EXISTS permitir_registro_manual boolean NOT NULL DEFAULT false;
 
 -- La receta sigue siendo inmutable; lo único que se puede mover es el plazo de la reserva (renovarla o liberarla).
@@ -98,7 +98,7 @@ BEGIN
             RAISE EXCEPTION 'RECETA_RECLAMADA: la receta % ya se dispensó en otra factura', NEW.id_receta USING ERRCODE = '23514';
         END IF;
     ELSE
-        IF NOT (SELECT permitir_registro_manual FROM politica_receta WHERE id = 1) THEN
+        IF NOT (SELECT permitir_registro_manual FROM politica_sistema WHERE id = 1) THEN
             RAISE EXCEPTION 'RECETA_MANUAL_NO_PERMITIDA: un medicamento controlado exige una receta validada con el central'
                 USING ERRCODE = '23514';
         END IF;

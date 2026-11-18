@@ -2,19 +2,14 @@
 -- código, confirma que son auténticas y vigentes, las reserva para una sola tienda y las da de baja al dispensarse,
 -- de modo que no puedan usarse otra vez en otra sucursal. Idempotente.
 
--- Reserva y vigencia como datos, no código: se ajustan con un UPDATE.
-CREATE TABLE IF NOT EXISTS politica_receta (
-    id integer PRIMARY KEY,
-    dias_vigencia integer NOT NULL,
-    minutos_reserva integer NOT NULL,
-    CONSTRAINT politica_receta_id_check CHECK (id = 1),
-    CONSTRAINT politica_receta_dias_check CHECK (dias_vigencia > 0),
-    CONSTRAINT politica_receta_reserva_check CHECK (minutos_reserva > 0)
-);
-
-INSERT INTO politica_receta (id, dias_vigencia, minutos_reserva)
-VALUES (1, 30, 15)
-ON CONFLICT (id) DO NOTHING;
+-- Reserva y vigencia como datos, no código: se ajustan con un UPDATE. Viven en la fila única de politica_sistema
+-- (01_hu06); antes estaban en politica_receta, que 16_reduccion_tablas.sql fusiona.
+ALTER TABLE politica_sistema
+    ADD COLUMN IF NOT EXISTS dias_vigencia integer NOT NULL DEFAULT 30
+        CONSTRAINT politica_sistema_dias_check CHECK (dias_vigencia > 0);
+ALTER TABLE politica_sistema
+    ADD COLUMN IF NOT EXISTS minutos_reserva integer NOT NULL DEFAULT 15
+        CONSTRAINT politica_sistema_reserva_check CHECK (minutos_reserva > 0);
 
 CREATE OR REPLACE FUNCTION receta_vigente(p_fecha_emision date)
 RETURNS boolean
@@ -22,7 +17,7 @@ LANGUAGE sql
 STABLE
 AS $$
     SELECT p_fecha_emision <= current_date
-       AND current_date - p_fecha_emision <= (SELECT dias_vigencia FROM politica_receta WHERE id = 1);
+       AND current_date - p_fecha_emision <= (SELECT dias_vigencia FROM politica_sistema WHERE id = 1);
 $$;
 
 -- Receta emitida por el médico/EPS. Estados: EMITIDA (libre), RESERVADA (una tienda la tiene en caja, con plazo),

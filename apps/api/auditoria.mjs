@@ -122,7 +122,7 @@ export async function auditoriaRed(query, { soloCuentasDe = null } = {}) {
 // Ciclo de sincronización: sube al central la auditoría nueva de esta tienda, en un solo insert por lote.
 // Idempotente por (id_tienda, id_registro). El cursor avanza solo sobre filas estables (ver ESTABLE).
 export async function subirAuditoria(idTienda) {
-  const cursor = await local.query("select ultimo_registro_enviado from auditoria_cursor where id_tienda = $1", [idTienda]);
+  const cursor = await local.query("select ultimo_registro_enviado from cursor_sync where id_tienda = $1", [idTienda]);
   const desde = Number(cursor.rows[0]?.ultimo_registro_enviado || 0);
   const filas = await local.query(
     `select id_registro, id_empleado, accion, entidad_afectada, id_entidad_afectada, detalle,
@@ -151,8 +151,8 @@ export async function subirAuditoria(idTienda) {
   }
   if (nuevo > desde) {
     await local.query(
-      `insert into auditoria_cursor (id_tienda, ultimo_registro_enviado, enviado_en) values ($1, $2, now())
-       on conflict (id_tienda) do update set ultimo_registro_enviado = excluded.ultimo_registro_enviado, enviado_en = now()`,
+      `insert into cursor_sync (id_tienda, ultimo_registro_enviado, auditoria_enviada_en) values ($1, $2, now())
+       on conflict (id_tienda) do update set ultimo_registro_enviado = excluded.ultimo_registro_enviado, auditoria_enviada_en = now()`,
       [idTienda, nuevo],
     );
   }

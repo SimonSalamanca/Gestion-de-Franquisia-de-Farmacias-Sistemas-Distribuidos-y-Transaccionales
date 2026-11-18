@@ -89,11 +89,11 @@ async function recetasDe(db, ids, completo) {
             c.nombre as paciente, c.documento_identidad, c.documento_cifrado, c.telefono, c.correo,
             e.nombre_completo as registrada_por,
             receta_vigente(r.fecha_emision) as vigente,
-            (r.fecha_emision + (select dias_vigencia from politica_receta where id = 1))::text as vence,
+            (r.fecha_emision + (select dias_vigencia from politica_sistema where id = 1))::text as vence,
             r.codigo_receta, r.origen, r.reservada_hasta,
             coalesce(r.reservada_hasta > now()::timestamp, false) as reserva_vigente,
             exists (select 1 from detalle_factura d where d.id_receta = r.id_receta) as dispensada,
-            (select permitir_registro_manual from politica_receta where id = 1) as manual_permitido
+            (select permitir_registro_manual from politica_sistema where id = 1) as manual_permitido
      from receta r
      left join cliente c on c.id_cliente = r.id_cliente
      left join empleado_ref e on e.id_empleado = r.id_empleado_registro
@@ -140,7 +140,7 @@ export async function recetaDe(db, idReceta, completo) {
 export async function registrarReceta(sesion, key, body) {
   const datos = validarFormato(body ?? {});
   // Con la validación contra el central activa, el registro a mano queda apagado (solo para recetas que no estén en el sistema).
-  const politica = await local.query("select permitir_registro_manual from politica_receta where id = 1");
+  const politica = await local.query("select permitir_registro_manual from politica_sistema where id = 1");
   if (!politica.rows[0]?.permitir_registro_manual) {
     throw conflicto("REGISTRO_MANUAL_DESACTIVADO", "Los medicamentos controlados se validan con el código de la receta contra el nodo central");
   }
@@ -159,11 +159,11 @@ export async function registrarReceta(sesion, key, body) {
       }
     });
 
-    // La fecha se compara contra la base: ni futura ni vencida (la vigencia es un dato de politica_receta).
+    // La fecha se compara contra la base: ni futura ni vencida (la vigencia es un dato de politica_sistema).
     const fecha = await client.query("select receta_vigente($1::date) as vigente, $1::date > current_date as futura", [datos.fecha]);
     if (fecha.rows[0].futura) throw invalido("La fecha de la receta no puede ser futura", { campo: "fecha_emision" });
     if (!fecha.rows[0].vigente) {
-      const dias = (await client.query("select dias_vigencia from politica_receta where id = 1")).rows[0].dias_vigencia;
+      const dias = (await client.query("select dias_vigencia from politica_sistema where id = 1")).rows[0].dias_vigencia;
       throw new ErrorNegocio(400, "RECETA_VENCIDA", `La receta está vencida: solo vale ${dias} días desde su emisión`, { campo: "fecha_emision" });
     }
 
@@ -228,7 +228,7 @@ export async function listarRecetas(query) {
               case when r.origen = 'CENTRAL'
                    then coalesce(r.reservada_hasta > now()::timestamp, false)
                         and not exists (select 1 from detalle_factura d where d.id_receta = r.id_receta)
-                   else receta_vigente(r.fecha_emision) and (select permitir_registro_manual from politica_receta where id = 1) end
+                   else receta_vigente(r.fecha_emision) and (select permitir_registro_manual from politica_sistema where id = 1) end
               and exists (
               select 1 from receta_medicamento x
               where x.id_receta = r.id_receta and x.cantidad_dispensada < x.cantidad_autorizada
@@ -292,7 +292,7 @@ export async function evaluarReceta(db, { idReceta = null, idCliente = null, lin
             receta_vigente(r.fecha_emision) as vigente, r.id_cliente, r.origen,
             coalesce(r.reservada_hasta > now()::timestamp, false) as reserva_vigente,
             exists (select 1 from detalle_factura d where d.id_receta = r.id_receta) as dispensada,
-            (select permitir_registro_manual from politica_receta where id = 1) as manual_permitido
+            (select permitir_registro_manual from politica_sistema where id = 1) as manual_permitido
      from medicamento_ref m
      left join receta r on r.id_receta = $2::int
      left join receta_medicamento rm on rm.id_receta = r.id_receta and rm.id_medicamento = m.id_medicamento

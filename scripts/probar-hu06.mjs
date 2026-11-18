@@ -16,7 +16,7 @@ function check(nombre, ok, detalle = "") {
 
 await migrate();
 await fijarPoliticaAcceso(5, 15);
-await local.query("update politica_acceso set intentos_maximos = 5, minutos_bloqueo = 15 where id = 1");
+await local.query("update politica_sistema set intentos_maximos = 5, minutos_bloqueo = 15 where id = 1");
 
 const nullable = await local.query(
   "select is_nullable from information_schema.columns where table_name = 'empleado_ref' and column_name = 'id_tienda'",
@@ -136,7 +136,7 @@ const despues = await local.query(
           c.bloqueado_hasta <= now() + make_interval(mins => p.minutos_bloqueo) as tope,
           c.bloqueado_hasta > now() + make_interval(mins => p.minutos_bloqueo - 1) as minimo
    from control_acceso c
-   cross join politica_acceso p
+   cross join politica_sistema p
    where c.id_empleado = $1 and p.id = 1`,
   [id],
 );
@@ -188,7 +188,7 @@ const insertado = await central.query(
 );
 const idAjeno = Number(insertado.rows[0].id);
 await pullReplica(1);
-const cursorDespues = await local.query("select ultimo_evento_visto from replica_cursor where id_tienda = 1");
+const cursorDespues = await local.query("select ultimo_evento_visto from cursor_sync where id_tienda = 1");
 const otraTienda = await local.query("select 1 from tienda_ref where id_tienda = 99");
 check("evento de otra tienda no se aplica", otraTienda.rowCount === 0);
 check(
@@ -256,7 +256,7 @@ link.openedUntil = 0;
 
 try {
   await fijarPoliticaAcceso(2, 9);
-  await local.query("update politica_acceso set intentos_maximos = 2, minutos_bloqueo = 9 where id = 1");
+  await local.query("update politica_sistema set intentos_maximos = 2, minutos_bloqueo = 9 where id = 1");
   await fijarEstadoAcceso(id, { bloqueos: true });
   await ajustarControlAcceso(id, { epoch: 9, intentos: 0, estado: "ACTIVO", bloqueadoHastaSql: "null" });
   await central.query("select fold_evento(1, $1, 'FAIL', $2::jsonb)", [
@@ -302,7 +302,7 @@ try {
   );
 } finally {
   await fijarPoliticaAcceso(5, 15);
-  await local.query("update politica_acceso set intentos_maximos = 5, minutos_bloqueo = 15 where id = 1");
+  await local.query("update politica_sistema set intentos_maximos = 5, minutos_bloqueo = 15 where id = 1");
 }
 
 await flushOutbox();

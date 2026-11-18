@@ -53,7 +53,7 @@ export default function sistema(router) {
   router.post("/api/sync/ahora", async (req, res) => {
     const enviados = (await flushOutbox())?.sent ?? 0;
     const pull = await pullReplica().catch((error) => ({ applied: 0, skipped: true, error: error.message }));
-    const cursor = await local.query("select coalesce(max(ultimo_evento_visto), 0)::bigint as cursor from replica_cursor");
+    const cursor = await local.query("select coalesce(max(ultimo_evento_visto), 0)::bigint as cursor from cursor_sync");
     return send(res, 200, {
       enviados,
       aplicados: pull.applied ?? 0,
