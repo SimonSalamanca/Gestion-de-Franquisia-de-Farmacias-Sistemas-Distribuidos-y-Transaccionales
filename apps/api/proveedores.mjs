@@ -55,6 +55,24 @@ function datosDe(body, { parcial }) {
   return datos;
 }
 
+// Medicamentos que surte el proveedor (medicamento_proveedor): lista de ids sin repetir. undefined = no se envió (no cambia).
+function medicamentosDe(body) {
+  if (!Object.hasOwn(body ?? {}, "medicamentos")) return undefined;
+  if (!Array.isArray(body.medicamentos) || body.medicamentos.length > 500) throw invalido("medicamentos debe ser una lista de ids", { campo: "medicamentos" });
+  return [...new Set(body.medicamentos.map((id) => entero(id, "medicamentos")))].sort((x, y) => x - y);
+}
+
+// Reemplaza los medicamentos que surte el proveedor. Devuelve true si cambiaron. Solo medicamentos que existen.
+async function fijarMedicamentos(client, idProveedor, ids) {
+  const actuales = (await client.query("select id_medicamento from medicamento_proveedor where id_proveedor = $1 order by 1", [idProveedor])).rows.map((r) => r.id_medicamento);
+  if (JSON.stringify(actuales) === JSON.stringify(ids)) return false;
+  const existentes = await client.query("select count(*)::int as n from medicamento where id_medicamento = any($1::int[])", [ids]);
+  if (existentes.rows[0].n !== ids.length) throw invalido("Algún medicamento no existe", { campo: "medicamentos" });
+  await client.query("delete from medicamento_proveedor where id_proveedor = $1", [idProveedor]);
+  await client.query("insert into medicamento_proveedor (id_proveedor, id_medicamento) select $1, unnest($2::int[])", [idProveedor, ids]);
+  return true;
+}
+
 // Quien actúa se relee en el central (no en la réplica del POS): solo roles con PROVEEDOR_GESTIONAR, que en este
 // proyecto son el administrador de tienda y el general. El rechazo también se audita.
 async function actorDe(idEmpleado) {
@@ -80,7 +98,9 @@ async function actorDe(idEmpleado) {
 
 async function publicar(client, idProveedor) {
   const fila = await client.query(
-    "select id_proveedor, nombre_empresa, nit, telefono, correo, direccion, activo from proveedor where id_proveedor = $1",
+    `select id_proveedor, nombre_empresa, nit, telefono, correo, direccion, activo,
+            coalesce((select array_agg(id_medicamento order by id_medicamento) from medicamento_proveedor mp where mp.id_proveedor = p.id_proveedor), '{}') as medicamentos
+     from proveedor p where id_proveedor = $1`,
     [idProveedor],
   );
   await client.query("select append_replica_evento(null, 'PROVEEDOR_UPSERT', 1, $1::jsonb)", [JSON.stringify(fila.rows[0])]);
@@ -111,6 +131,7 @@ const CAMPOS = "id_proveedor, nombre_empresa, nit, telefono, correo, direccion, 
 export async function crearProveedor(idActor, key, body) {
   const actor = await actorDe(idActor);
   const datos = datosDe(body, { parcial: false });
+  const medicamentos = medicamentosDe(body);
   return conIdempotencia(central, { key, operacion: "PROVEEDOR_CREAR", idEmpleado: actor.id_empleado, body }, async (client) => {
     await exigirNitLibre(client, datos.nit);
     let creado;
@@ -124,6 +145,8 @@ export async function crearProveedor(idActor, key, body) {
       throw comoConflicto(error);
     }
     const proveedor = creado.rows[0];
+    if (medicamentos) await fijarMedicamentos(client, proveedor.id_proveedor, medicamentos);
+    proveedor.medicamentos = medicamentos ?? [];
     await publicar(client, proveedor.id_proveedor);
     await auditar(client, actor, "PROVEEDOR_CREAR", proveedor.id_proveedor, `${proveedor.nombre_empresa} (NIT ${proveedor.nit})`);
     return { status: 201, body: proveedor };
@@ -135,23 +158,28 @@ export async function crearProveedor(idActor, key, body) {
 export async function editarProveedor(idActor, key, idProveedor, body) {
   const actor = await actorDe(idActor);
   const datos = datosDe(body, { parcial: true });
-  if (Object.keys(datos).length === 0) throw invalido("No hay campos para actualizar");
+  const medicamentos = medicamentosDe(body);
+  if (Object.keys(datos).length === 0 && medicamentos === undefined) throw invalido("No hay campos para actualizar");
   return conIdempotencia(central, { key, operacion: `PROVEEDOR_EDITAR:${idProveedor}`, idEmpleado: actor.id_empleado, body }, async (client) => {
     const actual = await client.query(`select ${CAMPOS} from proveedor where id_proveedor = $1 for update`, [idProveedor]);
     if (actual.rowCount === 0) throw noEncontrado("El proveedor no existe");
     if (datos.nit) await exigirNitLibre(client, datos.nit, idProveedor);
     const anterior = actual.rows[0];
     const cambios = Object.keys(datos).filter((campo) => (datos[campo] ?? null) !== (anterior[campo] ?? null));
+    if (medicamentos && (await fijarMedicamentos(client, idProveedor, medicamentos))) cambios.push("medicamentos");
     if (cambios.length === 0) return { status: 200, body: anterior };
-    const asignaciones = cambios.map((campo, i) => `${campo} = $${i + 2}`).join(", ");
-    let editado;
-    try {
-      editado = await client.query(`update proveedor set ${asignaciones} where id_proveedor = $1 returning ${CAMPOS}`, [
-        idProveedor,
-        ...cambios.map((campo) => datos[campo]),
-      ]);
-    } catch (error) {
-      throw comoConflicto(error);
+    const columnas = cambios.filter((campo) => campo !== "medicamentos");
+    let editado = { rows: [anterior] };
+    if (columnas.length > 0) {
+      const asignaciones = columnas.map((campo, i) => `${campo} = $${i + 2}`).join(", ");
+      try {
+        editado = await client.query(`update proveedor set ${asignaciones} where id_proveedor = $1 returning ${CAMPOS}`, [
+          idProveedor,
+          ...columnas.map((campo) => datos[campo]),
+        ]);
+      } catch (error) {
+        throw comoConflicto(error);
+      }
     }
     await publicar(client, idProveedor);
     const accion = cambios.length === 1 && cambios[0] === "activo" ? (datos.activo ? "PROVEEDOR_ACTIVAR" : "PROVEEDOR_DESACTIVAR") : "PROVEEDOR_EDITAR";
@@ -169,11 +197,15 @@ export async function listarProveedores(db, query = {}) {
   const incluirInactivos = ["1", "true"].includes(String(query.incluir_inactivos ?? ""));
   const esLocal = db === local;
   const tabla = esLocal ? "proveedor_ref" : "proveedor";
+  // medicamento_proveedor en el central; su réplica medicamento_proveedor_ref en la tienda.
+  const surte = esLocal ? "medicamento_proveedor_ref" : "medicamento_proveedor";
+  const catalogo = esLocal ? "medicamento_ref" : "medicamento";
   const abiertas = esLocal
     ? `, (select count(*)::int from pedido p where p.id_proveedor = t.id_proveedor and p.estado in ('SOLICITADO', 'ENVIADO', 'RECIBIDO_PARCIAL')) as solicitudes_abiertas`
     : "";
   const filas = await db.query(
-    `select t.id_proveedor, t.nombre_empresa, t.nit, t.telefono, t.correo, t.direccion, t.activo${abiertas}
+    `select t.id_proveedor, t.nombre_empresa, t.nit, t.telefono, t.correo, t.direccion, t.activo${abiertas},
+            coalesce((select array_agg(s.id_medicamento order by s.id_medicamento) from ${surte} s where s.id_proveedor = t.id_proveedor), '{}') as medicamentos
      from ${tabla} t
      where ($2::boolean or t.activo)
        and ($1 = '%%' or lower(t.nombre_empresa) like $1 escape '\\' or lower(coalesce(t.nit, '')) like $1 escape '\\')
@@ -181,7 +213,9 @@ export async function listarProveedores(db, query = {}) {
      limit ${MAX_RESULTADOS}`,
     [patron, incluirInactivos],
   );
-  return { proveedores: filas.rows };
+  // Catálogo activo para elegir qué medicamentos surte cada proveedor (pantalla de proveedores).
+  const medicamentos = await db.query(`select id_medicamento, codigo_interno, nombre_comercial from ${catalogo} where activo order by nombre_comercial`);
+  return { proveedores: filas.rows, catalogo: medicamentos.rows };
 }
 
 export async function detalleProveedor(db, idProveedor) {

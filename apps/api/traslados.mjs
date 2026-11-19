@@ -49,10 +49,12 @@ async function trasladoDe(db, idTraslado, { bloquear = false } = {}) {
     [idTraslado],
   );
   if (t.rowCount === 0) throw noEncontrado("El traslado no existe");
+  // Un traslado mueve un solo medicamento (traslado.id_medicamento). Hacia las tiendas viaja igual que antes, como una
+  // lista `items` de un elemento, así el formato de los eventos no cambia.
   const items = await db.query(
-    `select d.id_medicamento, m.nombre_comercial, d.cantidad, d.lotes
-     from detalle_traslado d join medicamento m on m.id_medicamento = d.id_medicamento
-     where d.id_traslado = $1 order by d.id_medicamento`,
+    `select t.id_medicamento, m.nombre_comercial, t.cantidad, t.lotes_enviados as lotes
+     from traslado t join medicamento m on m.id_medicamento = t.id_medicamento
+     where t.id_traslado = $1`,
     [idTraslado],
   );
   return { ...t.rows[0], items: items.rows };
@@ -81,8 +83,8 @@ async function disponibleEn(db, idOrigen, idMedicamento) {
   const r = await db.query(
     `select coalesce((select cantidad_disponible from medicamento_tienda where id_tienda = $1 and id_medicamento = $2), 0)::int as consolidado,
             (select fecha_sincronizacion from medicamento_tienda where id_tienda = $1 and id_medicamento = $2) as al,
-            coalesce((select sum(d.cantidad) from traslado t join detalle_traslado d on d.id_traslado = t.id_traslado
-                      where t.id_tienda_origen = $1 and d.id_medicamento = $2 and t.estado = 'SOLICITADO'), 0)::int as comprometido`,
+            coalesce((select sum(t.cantidad) from traslado t
+                      where t.id_tienda_origen = $1 and t.id_medicamento = $2 and t.estado = 'SOLICITADO'), 0)::int as comprometido`,
     [idOrigen, idMedicamento],
   );
   const f = r.rows[0];
@@ -93,8 +95,8 @@ async function disponibleEn(db, idOrigen, idMedicamento) {
 export async function origenesPara(idDestino, idMedicamento) {
   const r = await central.query(
     `select t.id_tienda, t.nombre, t.ciudad, i.cantidad_disponible::int as consolidado, i.fecha_sincronizacion as al,
-            coalesce((select sum(d.cantidad) from traslado x join detalle_traslado d on d.id_traslado = x.id_traslado
-                      where x.id_tienda_origen = t.id_tienda and d.id_medicamento = $2 and x.estado = 'SOLICITADO'), 0)::int as comprometido
+            coalesce((select sum(x.cantidad) from traslado x
+                      where x.id_tienda_origen = t.id_tienda and x.id_medicamento = $2 and x.estado = 'SOLICITADO'), 0)::int as comprometido
      from tienda t join medicamento_tienda i on i.id_tienda = t.id_tienda and i.id_medicamento = $2
      where t.activa and t.id_tienda <> $1 and i.cantidad_disponible > 0
      order by i.cantidad_disponible desc, t.nombre`,
@@ -147,12 +149,12 @@ export async function solicitarTraslado(sesion, key, body) {
     }
 
     const creado = await client.query(
-      `insert into traslado (id_tienda_origen, id_tienda_destino, id_empleado_solicitante, estado, observaciones, idempotency_key, actualizado_en)
-       values ($1, $2, $3, 'SOLICITADO', $4, $5, now()) returning id_traslado`,
-      [idOrigen, idDestino, sesion.id_empleado, observaciones, key],
+      `insert into traslado (id_tienda_origen, id_tienda_destino, id_empleado_solicitante, estado, observaciones, idempotency_key, actualizado_en,
+                             id_medicamento, cantidad)
+       values ($1, $2, $3, 'SOLICITADO', $4, $5, now(), $6, $7) returning id_traslado`,
+      [idOrigen, idDestino, sesion.id_empleado, observaciones, key, idMedicamento, cantidad],
     );
     const id = creado.rows[0].id_traslado;
-    await client.query("insert into detalle_traslado (id_traslado, id_medicamento, cantidad) values ($1, $2, $3)", [id, idMedicamento, cantidad]);
     const t = await trasladoDe(client, id);
     await emitir(client, idOrigen, "TRASLADO_DESCONTAR", carga(t));
     await auditarCentral(client, sesion.id_empleado, "TRASLADO_SOLICITAR", id, `de ${t.tienda_origen} a ${t.tienda_destino}: ${cantidad} u. de ${t.items[0].nombre_comercial}`);
@@ -190,8 +192,9 @@ async function cambiar(client, t, desde, hacia, { motivo = null, confirmar = fal
 async function descontado(client, idTienda, event) {
   const t = await recibir(client, idTienda, event, "ORIGEN");
   if (!t || !(await cambiar(client, t, "SOLICITADO", "EN_TRANSITO"))) return;
+  // Los lotes que envió el origen (la guía con la que el destino crea sus lotes).
   for (const item of event.payload.items ?? []) {
-    await client.query("update detalle_traslado set lotes = $3::jsonb where id_traslado = $1 and id_medicamento = $2", [t.id_traslado, item.id_medicamento, JSON.stringify(item.lotes)]);
+    await client.query("update traslado set lotes_enviados = $3::jsonb where id_traslado = $1 and id_medicamento = $2", [t.id_traslado, item.id_medicamento, JSON.stringify(item.lotes)]);
   }
   const actual = await trasladoDe(client, t.id_traslado);
   await emitir(client, t.id_tienda_destino, "TRASLADO_INGRESAR", carga(actual));
@@ -242,8 +245,8 @@ export async function listarTraslados({ idTienda = null } = {}) {
   const r = await central.query(
     `select t.id_traslado, t.estado, t.motivo, t.fecha_solicitud, t.fecha_confirmacion, t.actualizado_en,
             t.id_tienda_origen, o.nombre as tienda_origen, t.id_tienda_destino, d.nombre as tienda_destino, e.nombre_completo as solicitante,
-            (select json_agg(json_build_object('id_medicamento', x.id_medicamento, 'nombre_comercial', m.nombre_comercial, 'cantidad', x.cantidad))
-             from detalle_traslado x join medicamento m on m.id_medicamento = x.id_medicamento where x.id_traslado = t.id_traslado) as items
+            (select json_build_array(json_build_object('id_medicamento', t.id_medicamento, 'nombre_comercial', m.nombre_comercial, 'cantidad', t.cantidad))
+             from medicamento m where m.id_medicamento = t.id_medicamento) as items
      from traslado t
      join tienda o on o.id_tienda = t.id_tienda_origen
      join tienda d on d.id_tienda = t.id_tienda_destino

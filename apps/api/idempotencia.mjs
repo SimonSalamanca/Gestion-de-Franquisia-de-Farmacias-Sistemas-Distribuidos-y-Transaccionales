@@ -31,9 +31,9 @@ export async function conIdempotencia(pool, { key, operacion, idEmpleado, body }
     }
     const resultado = await fn(client);
     await client.query(
-      `insert into auth_operacion (idempotency_key, payload_hmac, resultado_http, cuerpo_json)
-       values ($1, $2, $3, $4::jsonb)`,
-      [clave, hmac, resultado.status, JSON.stringify(resultado.body)],
+      `insert into auth_operacion (idempotency_key, payload_hmac, resultado_http, cuerpo_json, id_empleado)
+       values ($1, $2, $3, $4::jsonb, $5)`,
+      [clave, hmac, resultado.status, JSON.stringify(resultado.body), idEmpleado ?? null],
     );
     return resultado;
   });

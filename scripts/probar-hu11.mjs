@@ -209,8 +209,8 @@ try {
     ["delete from cierre_caja_metodo_pago where id_cierre = $1", c.id_cierre],
     ["update cierre_caja_empleado set vendido = 0 where id_cierre = $1", c.id_cierre],
     ["delete from cierre_caja_empleado where id_cierre = $1", c.id_cierre],
-    ["update apertura_caja set turno = 'x' where periodo_caja = $1", P],
-    ["delete from apertura_caja where periodo_caja = $1", P],
+    ["update periodo_caja set turno = 'x' where periodo = $1", P],
+    ["delete from periodo_caja where periodo = $1", P],
   ]) {
     try {
       await local.query(sql, [valor]);
@@ -236,7 +236,7 @@ try {
     await cliente.query("begin");
     await cliente.query(
       `insert into cierre_caja (id_empleado, fecha, total_sistema, total_efectivo_contado, total_vouchers, diferencia, estado, periodo_caja)
-       values ($1, current_date, 100, 0, 0, 0, 'CONCILIADO', 987655)`,
+       values ($1, current_date, 100, 0, 0, 0, 'CONCILIADO', (select periodo from periodo_caja where estado <> 'CERRADO'))`,
       [adminId],
     );
     await cliente.query("commit");
@@ -344,10 +344,12 @@ try {
 } finally {
   link.estado = "online";
   // La caja de la tienda debe quedar ABIERTA, con un periodo nuevo, para que otras pruebas y la operación sigan.
-  const caja = (await local.query("select periodo, abierta from caja_control where id = 1")).rows[0];
-  if (!caja.abierta && adminId) {
-    await local.query("update caja_control set periodo = periodo + 1, abierta = true, abierta_en = clock_timestamp()::timestamp where id = 1");
-    await local.query("insert into apertura_caja (periodo_caja, id_empleado, turno) values ($1, $2, 'Fin de prueba')", [caja.periodo + 1, adminId]);
+  // Si quedó cerrada, se abre el periodo PENDIENTE que dejó el cierre (la misma transición que hace abrirCaja).
+  if (adminId) {
+    await local.query(
+      "update periodo_caja set estado = 'ABIERTO', abierto_en = clock_timestamp()::timestamp, id_empleado_apertura = $1, turno = 'Fin de prueba' where estado = 'PENDIENTE'",
+      [adminId],
+    );
   }
   // Las ventas y devoluciones de la prueba esperan en el outbox: se envían al central para no dejar eventos pendientes que
   // otras pruebas (que miden el consolidado del central con sumas exactas) enviarían junto con los suyos.

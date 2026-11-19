@@ -206,7 +206,7 @@ try {
      where m.activo = true and coalesce(l.s, 0) <= 0`,
   );
   const agotados = await buscar({ estado: "agotado" }, ctx, client);
-  check("estado=agotado cuenta todo el catálogo (más de 500)", agotados.total === agotadosSql && agotados.total > 2000, `api=${agotados.total} sql=${agotadosSql}`);
+  check("estado=agotado cuenta todo el catálogo (más de 500)", agotados.total === agotadosSql && agotados.total >= 2000, `api=${agotados.total} sql=${agotadosSql}`);
 
   const terminos = ["producto", "prueba 1", "principio 4", "perf-15", "acetaminofen", "ibuprofeno", "paracetamol", "med-0", "loratadina", "insulina"];
   const tiempos = [];

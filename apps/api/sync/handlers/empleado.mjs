@@ -17,6 +17,12 @@ async function empleadoUpsert(client, event, idTienda) {
     return;
   }
   const fuera = Number(payload.id_tienda) !== Number(idTienda);
+  // empleado_ref -> tienda_ref: si la tienda del empleado aún no llegó por réplica, se deja su fila mínima (TIENDA_UPSERT
+  // la completa). Así la llave nunca rechaza el evento ni detiene la réplica.
+  await client.query(
+    "insert into tienda_ref (id_tienda, nombre, activa) values ($1, $2, true) on conflict (id_tienda) do nothing",
+    [payload.id_tienda, `Tienda ${payload.id_tienda}`],
+  );
   await client.query(
     `insert into empleado_ref (
        id_empleado, id_rol, id_tienda, nombre_completo, usuario, activo, contrasena_hash, version_credencial, fecha_baja

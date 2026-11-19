@@ -214,7 +214,8 @@ try {
   const venta = await local.connect();
   try {
     await venta.query("begin");
-    await venta.query("select id_lote from lote where id_lote = $1 for update", [loteL]);
+    // El mismo bloqueo que toma la venta real (ventas.mjs): FOR NO KEY UPDATE, compatible con la llave alerta -> lote.
+    await venta.query("select id_lote from lote where id_lote = $1 for no key update", [loteL]);
     const t0 = Date.now();
     const rc = await evaluarAlertas();
     const ms = Date.now() - t0;

@@ -39,11 +39,13 @@ const textoOpcional = (valor, max, campo, etiqueta) => {
 // Si la caja está abierta, qué periodo corre y desde cuándo; y el último cierre. Lo lee el POS (también el cajero, para avisar).
 export async function estadoCaja(db = local) {
   const r = await db.query(
-    `select c.periodo, c.abierta, c.abierta_en, k.id_cierre, k.fecha_hora_cierre, k.estado as estado_cierre, e.nombre_completo as cerro
-     from caja_control c
+    // El último periodo que llegó a abrirse (periodo_caja): ABIERTO = caja abierta; CERRADO = caja cerrada esperando
+    // que un administrador abra el siguiente (que existe como PENDIENTE).
+    `select c.periodo, c.estado = 'ABIERTO' as abierta, c.abierto_en as abierta_en, k.id_cierre, k.fecha_hora_cierre,
+            k.estado as estado_cierre, e.nombre_completo as cerro
+     from (select * from periodo_caja where estado <> 'PENDIENTE' order by periodo desc limit 1) c
      left join lateral (select * from cierre_caja order by id_cierre desc limit 1) k on true
-     left join empleado_ref e on e.id_empleado = k.id_empleado
-     where c.id = 1`,
+     left join empleado_ref e on e.id_empleado = k.id_empleado`,
   );
   const f = r.rows[0];
   return {
@@ -181,9 +183,10 @@ export async function cerrarCaja(sesion, key, body) {
   const firma = body?.firma == null ? null : String(body.firma);
 
   return conIdempotencia(local, { key, operacion: "CAJA_CERRAR", idEmpleado: sesion.id_empleado, body }, async (client) => {
-    const caja = await client.query("select periodo, abierta, abierta_en from caja_control where id = 1 for update");
-    const { periodo, abierta, abierta_en: abiertaEn } = caja.rows[0];
-    if (!abierta) throw conflicto("CAJA_YA_CERRADA", "La caja ya está cerrada: el periodo se cerró (otro administrador, o un reintento)");
+    // El periodo vigente (el único no cerrado), bloqueado: las ventas en curso lo tienen con FOR SHARE y el cierre las espera.
+    const caja = await client.query("select periodo, estado, abierto_en from periodo_caja where estado <> 'CERRADO' for update");
+    const { periodo, estado: estadoPeriodo, abierto_en: abiertaEn } = caja.rows[0] ?? {};
+    if (estadoPeriodo !== "ABIERTO") throw conflicto("CAJA_YA_CERRADA", "La caja ya está cerrada: el periodo se cerró (otro administrador, o un reintento)");
 
     const calculo = await calcularPeriodo(client, periodo);
     // Si hubo ventas o devoluciones desde que el administrador calculó el resumen, lo que contó ya no es comparable.
@@ -233,11 +236,10 @@ export async function cerrarCaja(sesion, key, body) {
 
     const cierre = await client.query(
       `insert into cierre_caja (id_empleado, fecha, turno, total_sistema, total_efectivo_contado, total_vouchers, diferencia, estado,
-                                fecha_hora_cierre, periodo_caja, abierto_en, justificacion)
-       values ($1, current_date, $2, $3::numeric, $4::numeric, $5::numeric, $6::numeric, $7, clock_timestamp()::timestamp, $8,
-               coalesce($9::timestamp, (select min(fecha_hora) from factura where periodo_caja = $8), now()::timestamp), $10)
+                                fecha_hora_cierre, periodo_caja, justificacion)
+       values ($1, current_date, $2, $3::numeric, $4::numeric, $5::numeric, $6::numeric, $7, clock_timestamp()::timestamp, $8, $9)
        returning id_cierre, fecha_hora_cierre`,
-      [sesion.id_empleado, turno, dec(totalSistema), dec(totalEfectivo), dec(totalVouchers), dec(diferenciaTotal), estado, periodo, abiertaEn, conDiferencia.length > 0 ? justificacion : null],
+      [sesion.id_empleado, turno, dec(totalSistema), dec(totalEfectivo), dec(totalVouchers), dec(diferenciaTotal), estado, periodo, conDiferencia.length > 0 ? justificacion : null],
     );
     const { id_cierre: idCierre, fecha_hora_cierre: fechaCierre } = cierre.rows[0];
 
@@ -267,7 +269,16 @@ export async function cerrarCaja(sesion, key, body) {
     }
 
     // Criterio 5: la caja queda cerrada. Desde aquí cualquier factura nueva es rechazada (API y trigger de la base).
-    await client.query("update caja_control set abierta = false where id = 1");
+    // El periodo queda CERRADO (con su hora de apertura: la registrada o, en el periodo inicial sin apertura, la primera venta)
+    // y nace el siguiente como PENDIENTE: ahí caen las devoluciones hasta que un administrador lo abra.
+    await client.query(
+      `update periodo_caja
+          set estado = 'CERRADO',
+              abierto_en = coalesce(abierto_en, (select min(fecha_hora) from factura where periodo_caja = $1), now()::timestamp)
+        where periodo = $1`,
+      [periodo],
+    );
+    await client.query("insert into periodo_caja (periodo, estado) values ($1, 'PENDIENTE')", [periodo + 1]);
 
     const detalle =
       `cierre ${idCierre}; periodo ${periodo}; sistema ${dec(totalSistema)}; efectivo contado ${dec(totalEfectivo)}; vouchers ${dec(totalVouchers)}; ` +
@@ -282,12 +293,16 @@ export async function cerrarCaja(sesion, key, body) {
 export async function abrirCaja(sesion, key, body) {
   const turno = textoOpcional(body?.turno, 20, "turno", "El turno");
   return conIdempotencia(local, { key, operacion: "CAJA_ABRIR", idEmpleado: sesion.id_empleado, body }, async (client) => {
-    const caja = await client.query("select periodo, abierta from caja_control where id = 1 for update");
-    if (caja.rows[0].abierta) throw conflicto("CAJA_YA_ABIERTA", "La caja ya está abierta: hay un periodo en curso");
-    const nuevo = caja.rows[0].periodo + 1;
-    const abierta = await client.query("update caja_control set periodo = $1, abierta = true, abierta_en = clock_timestamp()::timestamp where id = 1 returning abierta_en", [nuevo]);
-    await client.query("insert into apertura_caja (periodo_caja, id_empleado, fecha_hora, turno) values ($1, $2, $3, $4)", [nuevo, sesion.id_empleado, abierta.rows[0].abierta_en, turno]);
-    await auditar(client, sesion.id_empleado, "CAJA_ABRIR", "caja_control", nuevo, `periodo ${nuevo}${turno ? `; turno ${turno}` : ""}`);
+    // Se abre el periodo PENDIENTE que dejó el último cierre (con quién, cuándo y en qué turno).
+    const caja = await client.query("select periodo, estado from periodo_caja where estado <> 'CERRADO' for update");
+    if (caja.rows[0]?.estado === "ABIERTO") throw conflicto("CAJA_YA_ABIERTA", "La caja ya está abierta: hay un periodo en curso");
+    const nuevo = caja.rows[0].periodo;
+    await client.query(
+      `update periodo_caja set estado = 'ABIERTO', abierto_en = clock_timestamp()::timestamp, id_empleado_apertura = $2, turno = $3
+        where periodo = $1`,
+      [nuevo, sesion.id_empleado, turno],
+    );
+    await auditar(client, sesion.id_empleado, "CAJA_ABRIR", "periodo_caja", nuevo, `periodo ${nuevo}${turno ? `; turno ${turno}` : ""}`);
     return { status: 201, body: await estadoCaja(client) };
   });
 }
@@ -296,9 +311,9 @@ export async function abrirCaja(sesion, key, body) {
 
 export async function listarCierres() {
   const r = await local.query(
-    `select k.id_cierre, k.periodo_caja, k.turno, k.fecha_hora_cierre, k.abierto_en, k.total_sistema::text, k.total_efectivo_contado::text,
+    `select k.id_cierre, k.periodo_caja, k.turno, k.fecha_hora_cierre, pc.abierto_en, k.total_sistema::text, k.total_efectivo_contado::text,
             k.total_vouchers::text, k.diferencia::text, k.estado, e.nombre_completo as cerro
-     from cierre_caja k join empleado_ref e on e.id_empleado = k.id_empleado
+     from cierre_caja k join empleado_ref e on e.id_empleado = k.id_empleado left join periodo_caja pc on pc.periodo = k.periodo_caja
      order by k.id_cierre desc limit ${MAX_CIERRES}`,
   );
   return { cierres: r.rows };
@@ -306,9 +321,10 @@ export async function listarCierres() {
 
 export async function detalleCierre(db, idCierre) {
   const cabecera = await db.query(
-    `select k.id_cierre, k.periodo_caja, k.turno, k.fecha, k.fecha_hora_cierre, k.abierto_en, k.total_sistema::text, k.total_efectivo_contado::text,
+    `select k.id_cierre, k.periodo_caja, k.turno, k.fecha, k.fecha_hora_cierre, pc.abierto_en, k.total_sistema::text, k.total_efectivo_contado::text,
             k.total_vouchers::text, k.diferencia::text, k.estado, k.justificacion, e.nombre_completo as cerro
-     from cierre_caja k join empleado_ref e on e.id_empleado = k.id_empleado where k.id_cierre = $1`,
+     from cierre_caja k join empleado_ref e on e.id_empleado = k.id_empleado left join periodo_caja pc on pc.periodo = k.periodo_caja
+     where k.id_cierre = $1`,
     [idCierre],
   );
   if (cabecera.rowCount === 0) throw noEncontrado("El cierre no existe");

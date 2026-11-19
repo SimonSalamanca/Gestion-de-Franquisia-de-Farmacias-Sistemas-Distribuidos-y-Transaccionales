@@ -241,7 +241,7 @@ try {
   const sinUmbral = (await local.query("insert into alerta (tipo, id_medicamento, nivel, detalle) values ('SIN_UMBRAL', $1, 'ALTA', '{}') returning id_alerta", [idMed])).rows[0].id_alerta;
   const noRebast = await pedir(ruta, { method: "POST", token: adminTienda, key: nuevaKey(), body: { id_alerta: sinUmbral, id_proveedor: idProv } });
   check("solo las alertas de stock generan solicitud 409", noRebast.status === 409 && noRebast.data.codigo === "ALERTA_NO_REABASTECIBLE");
-  const resuelta = (await local.query("insert into alerta (tipo, id_medicamento, id_lote, nivel, detalle, estado, resuelta_en) values ('STOCK_BAJO', $1, 987654, 'MEDIA', '{\"stock\":1,\"stock_minimo\":10}', 'RESUELTA', now()) returning id_alerta", [idMed])).rows[0].id_alerta;
+  const resuelta = (await local.query("insert into alerta (tipo, id_medicamento, id_lote, nivel, detalle, estado, resuelta_en) values ('STOCK_BAJO', $1, null, 'MEDIA', '{\"stock\":1,\"stock_minimo\":10}', 'RESUELTA', now()) returning id_alerta", [idMed])).rows[0].id_alerta;
   const yaResuelta = await pedir(ruta, { method: "POST", token: adminTienda, key: nuevaKey(), body: { id_alerta: resuelta, id_proveedor: idProv } });
   check("una alerta ya resuelta no genera solicitud 409", yaResuelta.status === 409 && yaResuelta.data.codigo === "ALERTA_RESUELTA");
   await local.query("delete from alerta where id_alerta = any($1::bigint[])", [[sinUmbral, resuelta]]);

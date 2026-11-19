@@ -101,6 +101,24 @@ export function crearEmpleadoPrueba({ usuario, nombre, idRol, idTienda = 1, hash
 
 // ---- Tiendas ----
 
+// Tienda inactiva de prueba (reutiliza la existente con ese nombre) y publica su alta. Inactiva no exige umbrales ni
+// aparece en la operación de la red; sirve para dirigir eventos a "otra tienda" real (replica_evento exige que exista).
+export function asegurarTiendaInactivaPrueba(nombre) {
+  return conTx(async (cliente) => {
+    const previa = await cliente.query("select id_tienda from tienda where nombre = $1 order by id_tienda limit 1", [nombre]);
+    if (previa.rowCount > 0) return previa.rows[0].id_tienda;
+    const fila = await cliente.query(
+      `insert into tienda (nombre, direccion, ciudad, activa) values ($1, 'Sin dirección', 'Bogotá', false)
+       returning id_tienda, nombre, activa, version_tienda`,
+      [nombre],
+    );
+    await publicar(cliente, null, "TIENDA_UPSERT", Number(fila.rows[0].version_tienda), {
+      id_tienda: fila.rows[0].id_tienda, nombre: fila.rows[0].nombre, activa: false,
+    });
+    return fila.rows[0].id_tienda;
+  });
+}
+
 export function desactivarTiendaCentral(idTienda) {
   return conTx(async (cliente) => {
     const fila = await cliente.query("update tienda set activa = false, version_tienda = version_tienda + 1 where id_tienda = $1 returning id_tienda, nombre, activa, version_tienda", [idTienda]);

@@ -189,7 +189,7 @@ try {
 
   check("hasta que la tienda origen responde, el central espera (SOLICITADO)", (await estadoCentral(id1)).estado === "SOLICITADO");
   await origen("flush");
-  check("el central pasa a EN_TRANSITO con los lotes que salieron", (await estadoCentral(id1)).estado === "EN_TRANSITO" && (await uno(central, "select lotes from detalle_traslado where id_traslado = $1", [id1])).lotes?.[0]?.numero_lote === `T17-${S}-1`);
+  check("el central pasa a EN_TRANSITO con los lotes que salieron", (await estadoCentral(id1)).estado === "EN_TRANSITO" && (await uno(central, "select lotes_enviados as lotes from traslado where id_traslado = $1", [id1])).lotes?.[0]?.numero_lote === `T17-${S}-1`);
   await pullReplica();
   const lotesD = await lotesDestino();
   check("criterio 2: la tienda destino ingresó 20 en el mismo lote, caducidad y proveedor", lotesD.length === 1 && lotesD[0].numero_lote === `T17-${S}-1` && lotesD[0].fecha_caducidad === fechaL1 && lotesD[0].id_proveedor === proveedor && lotesD[0].cantidad_disponible === 20, JSON.stringify(lotesD));

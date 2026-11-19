@@ -118,7 +118,8 @@ export async function buscarMedicamentos(query = {}) {
 }
 
 // Criterio 2: lo que la solicitud necesita saber de una alerta de stock, sin volver a teclear el producto. La cantidad
-// sugerida repone hasta el doble del mínimo; el proveedor sugerido es el del último lote recibido de ese medicamento.
+// sugerida repone hasta el doble del mínimo. El proveedor sugerido es uno de los que surten el medicamento según el central
+// (medicamento_proveedor_ref); si ninguno está registrado, el del último lote recibido de ese medicamento.
 export async function sugerenciaDeAlerta(idAlerta) {
   const alerta = await local.query(
     `select a.id_alerta, a.tipo, a.nivel, a.estado, a.detalle, a.id_medicamento, m.codigo_interno, m.nombre_comercial,
@@ -136,9 +137,16 @@ export async function sugerenciaDeAlerta(idAlerta) {
   const stock = Number(a.detalle.stock ?? 0);
   const minimo = Number(a.detalle.stock_minimo ?? 0);
   const proveedor = await local.query(
-    `select pr.id_proveedor, pr.nombre_empresa
-     from lote l join proveedor_ref pr on pr.id_proveedor = l.id_proveedor and pr.activo
-     where l.id_medicamento = $1 order by l.fecha_registro desc, l.id_lote desc limit 1`,
+    `select id_proveedor, nombre_empresa from (
+       select pr.id_proveedor, pr.nombre_empresa, 1 as prioridad, null::timestamp as ultimo, null::int as id_lote
+       from medicamento_proveedor_ref s join proveedor_ref pr on pr.id_proveedor = s.id_proveedor and pr.activo
+       where s.id_medicamento = $1
+       union all
+       select pr.id_proveedor, pr.nombre_empresa, 2, l.fecha_registro, l.id_lote
+       from lote l join proveedor_ref pr on pr.id_proveedor = l.id_proveedor and pr.activo
+       where l.id_medicamento = $1
+     ) x
+     order by prioridad, ultimo desc nulls last, id_lote desc nulls last, nombre_empresa limit 1`,
     [a.id_medicamento],
   );
   const abierta = await local.query(

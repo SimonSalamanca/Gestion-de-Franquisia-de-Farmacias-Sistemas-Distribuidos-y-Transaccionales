@@ -138,6 +138,16 @@ async function proveedorUpsert(client, event) {
       completo,
     ],
   );
+  // Medicamentos que surte (medicamento_proveedor_ref): solo si el evento trae la lista (los eventos anteriores no la
+  // traen y no deben borrarla). Un medicamento que aún no llegó por réplica se omite; el próximo cambio lo incluye.
+  if (Array.isArray(payload.medicamentos)) {
+    await client.query("delete from medicamento_proveedor_ref where id_proveedor = $1", [payload.id_proveedor]);
+    await client.query(
+      `insert into medicamento_proveedor_ref (id_proveedor, id_medicamento)
+       select $1, m.id_medicamento from medicamento_ref m where m.id_medicamento = any($2::int[])`,
+      [payload.id_proveedor, payload.medicamentos],
+    );
+  }
 }
 
 export default {

@@ -407,7 +407,9 @@ export async function restablecerContrasena(key, body) {
   const password = String(body.password ?? "");
   if (!usuario || !normalizarCodigo(body.codigo)) throw invalido("Usuario y código son obligatorios");
   validarContrasena(password, usuario);
-  return conIdempotencia(central, { key, operacion: "CONTRASENA_RESTABLECER", idEmpleado: 0, body }, async (client) => {
+  // Sin sesión: nadie identificado ejecuta la operación (auth_operacion.id_empleado queda vacío); el empleado se reconoce
+  // después por su usuario y su código.
+  return conIdempotencia(central, { key, operacion: "CONTRASENA_RESTABLECER", idEmpleado: null, body }, async (client) => {
     const cuenta = await client.query(
       "select id_empleado, id_tienda, usuario from empleado where usuario = $1 and activo = true and fecha_baja is null for update",
       [usuario],

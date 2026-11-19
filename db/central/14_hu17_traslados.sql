@@ -11,7 +11,7 @@ ALTER TABLE traslado ADD COLUMN IF NOT EXISTS actualizado_en timestamp without t
 ALTER TABLE traslado ADD COLUMN IF NOT EXISTS idempotency_key uuid;
 
 -- Lotes que salieron de la tienda origen (número, caducidad, proveedor y cantidad): la tienda destino los ingresa iguales.
-ALTER TABLE detalle_traslado ADD COLUMN IF NOT EXISTS lotes jsonb;
+-- Se guardan en traslado.lotes_enviados (20_modelo_b3.sql: el traslado lleva un solo medicamento, sin tabla de detalle).
 
 DO $$
 BEGIN

@@ -92,7 +92,7 @@ export async function buscar(query, ctx, db = local) {
       and (${NORM("m.nombre_comercial")} like $1 escape '\\'
            or ${NORM("m.principio_activo")} like $1 escape '\\'
            or ${NORM("m.codigo_interno")} like $1 escape '\\')
-      and ($3::int is null or m.id_categoria = $3)`;
+      and ($3::int is null or coalesce(m.id_categoria, 0) = $3)`;
   const valores = [patron, prefijo, categoria, normal];
   const limpiar = ({ relevancia, total, ...row }) => ({ ...row, actualizado_en: null });
 
@@ -207,6 +207,6 @@ export async function listarTiendas(ctx) {
 }
 
 export async function listarCategorias() {
-  const result = await local.query("select id_categoria, nombre from categoria_ref order by nombre");
+  const result = await local.query("select id_categoria, nombre from categoria_ref order by id_categoria = 0, nombre");
   return result.rows;
 }

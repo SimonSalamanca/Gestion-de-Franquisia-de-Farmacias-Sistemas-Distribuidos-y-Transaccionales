@@ -95,12 +95,13 @@ async function auditar(client, node, idEmpleado, accion, detalle) {
   );
 }
 
-async function guardar(client, key, hmac, result, token) {
+// idEmpleado: quién ejecutó la operación (auth_operacion -> empleado), cuando el inicio de sesión lo identificó.
+async function guardar(client, key, hmac, result, token, idEmpleado = null) {
   await client.query(
-    `insert into auth_operacion (idempotency_key, payload_hmac, resultado_http, cuerpo_json, token_entrega)
-     values ($1, $2, $3, $4::jsonb, $5)
+    `insert into auth_operacion (idempotency_key, payload_hmac, resultado_http, cuerpo_json, token_entrega, id_empleado)
+     values ($1, $2, $3, $4::jsonb, $5, $6)
      on conflict (idempotency_key) do nothing`,
-    [key, hmac, result.status, JSON.stringify(result.body), token || null],
+    [key, hmac, result.status, JSON.stringify(result.body), token || null, idEmpleado],
   );
   return result;
 }
@@ -355,7 +356,7 @@ export async function login({ nodo, usuario, password, idempotencyKey }) {
     };
     const stored = { ...body };
     body.token = tokenPair;
-    await guardar(client, key, hmac, { status: 200, body: stored }, tokenPair);
+    await guardar(client, key, hmac, { status: 200, body: stored }, tokenPair, empleado.id_empleado);
     return { status: 200, body };
   });
 }

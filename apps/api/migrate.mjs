@@ -58,7 +58,7 @@ const ROL_APP = "farmahub_datos";
 const SOLO_AGREGAR = {
   central: ["registro_actividad_central", "replica_evento", "inbox_sync"],
   local: [
-    "registro_actividad", "cierre_caja", "cierre_caja_metodo_pago", "cierre_caja_empleado", "apertura_caja", "recepcion",
+    "registro_actividad", "cierre_caja", "cierre_caja_metodo_pago", "cierre_caja_empleado", "recepcion",
     "detalle_recepcion", "diferencia_recepcion", "movimiento_inventario", "detalle_factura", "factura_metodo_pago", "devolucion_pago",
   ],
 };
@@ -460,7 +460,18 @@ async function centralTienda(idTienda) {
   return result.rowCount === 1;
 }
 
+// El cursor de sincronización es de la tienda (cursor_sync -> tienda_ref). En el primer arranque de una tienda nueva la
+// réplica todavía no trajo su fila: se crea con el nombre del central (o uno provisional) y TIENDA_UPSERT la completa.
 async function localCursor(idTienda) {
+  const nombre = await NODOS.central.pool
+    .query("select nombre from tienda where id_tienda = $1", [idTienda])
+    .then((r) => r.rows[0]?.nombre)
+    .catch(() => null);
+  await NODOS.local.pool.query(
+    `insert into tienda_ref (id_tienda, nombre, activa, es_tienda_local) values ($1, $2, true, true)
+     on conflict (id_tienda) do nothing`,
+    [idTienda, nombre || `Tienda ${idTienda}`],
+  );
   await NODOS.local.pool.query(
     "insert into cursor_sync (id_tienda) values ($1) on conflict (id_tienda) do nothing",
     [idTienda],
